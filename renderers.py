@@ -238,6 +238,44 @@ def render(msg):
     return render_generic(msg)
 
 
+_WDAYS  = ("Mon","Tue","Wed","Thu","Fri","Sat","Sun")
+_MONTHS = ("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
+
+def render_clock():
+    """Show time + date for ~1 second, polling server. Returns action or 'done'."""
+    t = time.localtime()
+    colon = ":" if t.tm_sec % 2 == 0 else " "
+    time_str = f"{t.tm_hour:02}{colon}{t.tm_min:02}"
+    date_str = f"{_WDAYS[t.tm_wday]} {_MONTHS[t.tm_mon-1]} {t.tm_mday}"
+
+    # Time: scaled x2 via a Group (approx 60px wide, center at x=2)
+    time_lbl = label.Label(terminalio.FONT, text=time_str, color=0xFFFFFF)
+    time_lbl.x = 0
+    time_lbl.y = 0
+    time_grp = displayio.Group(scale=2)
+    time_grp.x = (PANEL_WIDTH - len(time_str) * 6 * 2) // 2
+    time_grp.y = 1
+    time_grp.append(time_lbl)
+
+    # Date: normal scale, centered
+    date_lbl = label.Label(terminalio.FONT, text=date_str, color=0x555555)
+    date_lbl.x = (PANEL_WIDTH - len(date_str) * 6) // 2
+    date_lbl.y = 23
+
+    group = displayio.Group()
+    group.append(time_grp)
+    group.append(date_lbl)
+    _display.root_group = group
+
+    end = time.monotonic() + 1
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+        time.sleep(0.05)
+    return "done"
+
+
 def render_greeting(text):
     lbl = label.Label(terminalio.FONT, text=text, color=GREETING_COLOR)
     lbl.y = PANEL_HEIGHT // 2 - 3

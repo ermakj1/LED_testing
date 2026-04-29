@@ -257,4 +257,9 @@ while True:
             if time.monotonic() < msg["expires_at"]:
                 message_queue.append(msg)
     else:
-        time.sleep(0.05)
+        result = renderers.render_clock()
+        if result == "clear":
+            message_queue.clear()
+        elif result == "sleep":
+            clear_display()
+            asleep = True
