@@ -142,6 +142,20 @@ def add_message(request: Request):
     except Exception as e:
         return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
 
+@server.route("/register", "POST")
+def register(request: Request):
+    global callback_url
+    try:
+        data = json.loads(request.body)
+        url = str(data.get("url", "")).strip()
+        if not url:
+            return Response(request, '{"ok":false,"reason":"missing url"}', content_type="application/json", status=(400, "Bad Request"))
+        callback_url = url
+        print(f"Registered callback: {callback_url}")
+        return Response(request, '{"ok":true}', content_type="application/json")
+    except Exception as e:
+        return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
+
 @server.route("/clear", "POST")
 def clear_queue(request: Request):
     message_queue.clear()
@@ -168,13 +182,13 @@ print(f"Listening at http://matrixportal.local  ({wifi.radio.ipv4_address})")
 
 _rm = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
 requests = adafruit_requests.Session(_rm, adafruit_connection_manager.get_radio_ssl_context(wifi.radio))
-OPENCLAW_URL = os.getenv("OPENCLAW_URL")  # e.g. http://192.168.1.x:8765/events
+callback_url = None
 
 def notify_openclaw(event):
-    if not OPENCLAW_URL:
+    if not callback_url:
         return
     try:
-        requests.post(OPENCLAW_URL, json={"event": event})
+        requests.post(callback_url, json={"event": event})
     except Exception as e:
         print(f"notify_openclaw failed: {e}")
 
