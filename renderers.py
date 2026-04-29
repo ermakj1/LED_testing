@@ -244,23 +244,23 @@ _MONTHS = ("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","De
 def render_clock():
     """Show time + date for ~1 second, polling server. Returns action or 'done'."""
     t = time.localtime()
-    colon = ":" if t.tm_sec % 2 == 0 else " "
-    time_str = f"{t.tm_hour:02}{colon}{t.tm_min:02}"
+    hour = t.tm_hour % 12 or 12
+    time_str = f"{hour}:{t.tm_min:02}"
     date_str = f"{_WDAYS[t.tm_wday]} {_MONTHS[t.tm_mon-1]} {t.tm_mday}"
 
-    # Time: scaled x2 via a Group (approx 60px wide, center at x=2)
+    # Time: scaled x2 via a Group
     time_lbl = label.Label(terminalio.FONT, text=time_str, color=0xFFFFFF)
     time_lbl.x = 0
     time_lbl.y = 0
     time_grp = displayio.Group(scale=2)
     time_grp.x = (PANEL_WIDTH - len(time_str) * 6 * 2) // 2
-    time_grp.y = 1
+    time_grp.y = 8
     time_grp.append(time_lbl)
 
     # Date: normal scale, centered
     date_lbl = label.Label(terminalio.FONT, text=date_str, color=0x555555)
     date_lbl.x = (PANEL_WIDTH - len(date_str) * 6) // 2
-    date_lbl.y = 23
+    date_lbl.y = 25
 
     group = displayio.Group()
     group.append(time_grp)
@@ -338,44 +338,57 @@ def render_stock(msg):
 
 def render_weather(msg):
     condition = msg.get("condition", "")
-    temp      = msg.get("temp", None)
-    text      = f"{temp}° {condition}" if temp is not None else condition
+    high      = msg.get("high",   None)
+    low       = msg.get("low",    None)
+    precip    = msg.get("precip", None)
     icon_type = _condition_to_icon(condition)
 
-    icon_bm  = displayio.Bitmap(ICON_W, ICON_H, 8)
-    icon_pal = _make_icon_palette()
-    icon_tile = displayio.TileGrid(icon_bm, pixel_shader=icon_pal, x=ICON_X, y=ICON_Y)
+    # Randomly place icon on left or right half
+    icon_on_left = random.choice([True, False])
+    icon_x = 0  if icon_on_left else 32
+    text_x = 34 if icon_on_left else 2
 
-    lbl = label.Label(terminalio.FONT, text=text, color=0x00FFFF)
-    lbl.y = PANEL_HEIGHT // 2 - 3
+    # Icon: 16x16 bitmap scaled x2 to fill a 32x32 half
+    icon_bm   = displayio.Bitmap(ICON_W, ICON_H, 8)
+    icon_pal  = _make_icon_palette()
+    icon_tile = displayio.TileGrid(icon_bm, pixel_shader=icon_pal)
+    icon_grp  = displayio.Group(scale=2)
+    icon_grp.x = icon_x
+    icon_grp.y = 0
+    icon_grp.append(icon_tile)
 
+    # Static text: high, low, precip on the other half
     group = displayio.Group()
-    group.append(icon_tile)
-    group.append(lbl)
+    group.append(icon_grp)
+
+    def add_label(text, color, y):
+        lbl = label.Label(terminalio.FONT, text=text, color=color)
+        lbl.x = text_x
+        lbl.y = y
+        group.append(lbl)
+
+    if high   is not None: add_label(f"H:{int(high)}", 0xFF8844, 4)
+    if low    is not None: add_label(f"L:{int(low)}",  0x4499FF, 13)
+    if precip is not None: add_label(f"{int(precip)}%",0x44CCFF, 22)
+
     _display.root_group = group
 
     state = _init_drops() if icon_type in ("rain", "storm") else \
             _init_flakes() if icon_type == "snow" else None
 
-    frame      = 0
-    text_width = lbl.bounding_box[2]
-    for x in range(PANEL_WIDTH, -text_width - 1, -1):
+    frame = 0
+    end   = time.monotonic() + 6
+    while time.monotonic() < end:
         action = _poll()
         if action:
             return action
-        lbl.x = x
         if frame % 3 == 0:
             icon_frame = frame // 3
-            if icon_type == "sun":
-                _draw_sun(icon_bm, icon_frame)
-            elif icon_type == "rain":
-                state = _draw_rain(icon_bm, state)
-            elif icon_type == "snow":
-                state = _draw_snow(icon_bm, state, icon_frame)
-            elif icon_type == "storm":
-                state = _draw_storm(icon_bm, state, icon_frame)
-            elif icon_type == "cloud":
-                _draw_cloud(icon_bm, icon_frame)
+            if   icon_type == "sun":   _draw_sun(icon_bm, icon_frame)
+            elif icon_type == "rain":  state = _draw_rain(icon_bm, state)
+            elif icon_type == "snow":  state = _draw_snow(icon_bm, state, icon_frame)
+            elif icon_type == "storm": state = _draw_storm(icon_bm, state, icon_frame)
+            elif icon_type == "cloud": _draw_cloud(icon_bm, icon_frame)
         frame += 1
-        time.sleep(SCROLL_DELAY)
+        time.sleep(0.05)
     return "done"

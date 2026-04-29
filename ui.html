@@ -44,9 +44,17 @@ button:active{background:#006ee0}
     <option>storm</option>
   </select>
 </div>
-<div id="f-temp" class="field">
-  <label>Temperature (°F)</label>
-  <input id="temp" type="number" placeholder="72">
+<div id="f-high" class="field">
+  <label>High (°F)</label>
+  <input id="high" type="number" placeholder="75">
+</div>
+<div id="f-low" class="field">
+  <label>Low (°F)</label>
+  <input id="low" type="number" placeholder="60">
+</div>
+<div id="f-precip" class="field">
+  <label>Precip %</label>
+  <input id="precip" type="number" placeholder="20" min="0" max="100">
 </div>
 <div id="f-symbol" class="field">
   <label>Symbol</label>
@@ -70,15 +78,16 @@ button:active{background:#006ee0}
 <script>
 const FIELDS={
   news:['text'],
-  weather:['condition','temp'],
+  weather:['condition','high','low','precip'],
   stock:['symbol','change'],
   calendar:['cal-time','text'],
   '':['text']
 };
+const NUMERIC=new Set(['high','low','precip','change']);
 function update(){
   const cat=document.getElementById('cat').value;
   const show=FIELDS[cat]||[];
-  ['text','condition','temp','symbol','change','cal-time'].forEach(f=>{
+  ['text','condition','high','low','precip','symbol','change','cal-time'].forEach(f=>{
     const el=document.getElementById('f-'+f);
     el.className='field'+(show.includes(f)?' on':'');
   });
@@ -91,7 +100,7 @@ async function send(){
   (FIELDS[cat]||[]).forEach(f=>{
     const el=document.getElementById(f);
     const v=el.tagName==='SELECT'?el.value:el.value.trim();
-    if(f==='temp'||f==='change') payload[f]=parseFloat(v);
+    if(NUMERIC.has(f)) payload[f]=parseFloat(v);
     else if(f==='cal-time') payload['time']=v;
     else payload[f]=v;
   });

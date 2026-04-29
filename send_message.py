@@ -45,9 +45,10 @@ if __name__ == "__main__":
              ttl_minutes=float(args[2]) if len(args) > 2 else 60)
 
     elif category == "weather":
-        # weather <condition> <temp> [ttl]
-        post({"category": "weather", "condition": args[1], "temp": float(args[2])},
-             ttl_minutes=float(args[3]) if len(args) > 3 else 120)
+        # weather <condition> <high> <low> <precip%> [ttl]
+        post({"category": "weather", "condition": args[1],
+              "high": float(args[2]), "low": float(args[3]), "precip": float(args[4])},
+             ttl_minutes=float(args[5]) if len(args) > 5 else 120)
 
     elif category == "stock":
         # stock <symbol> <change%> [ttl]
