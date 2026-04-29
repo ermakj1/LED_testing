@@ -9,7 +9,8 @@ if [ ! -d "$CIRCUITPY" ]; then
 fi
 
 cp code.py "$CIRCUITPY/code.py"
-echo "Deployed code.py"
+cp renderers.py "$CIRCUITPY/renderers.py"
+echo "Deployed code.py + renderers.py"
 
 if [ -d "lib" ] && [ "$(ls -A lib)" ]; then
     cp -r lib/. "$CIRCUITPY/lib/"

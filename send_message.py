@@ -3,15 +3,14 @@
 Send a message to the MatrixPortal display.
 
 Usage:
-    python3 send_message.py "AAPL +2.3%" stock 30
-    python3 send_message.py "Rain at 3pm" weather 120
-    python3 send_message.py "Meeting at 2pm" calendar 60
-    python3 send_message.py "Big news headline" news
+    python3 send_message.py news     "Big headline here"
+    python3 send_message.py weather  rain 72
+    python3 send_message.py stock    AAPL 2.3
+    python3 send_message.py calendar "2pm" "Dentist"
+    python3 send_message.py text     "anything at all"
 
-Arguments:
-    text          message to display
-    category      news | weather | calendar | stock  (default: news)
-    ttl_minutes   how long to keep showing it        (default: 60)
+Optional last argument: ttl_minutes (default 60)
+    python3 send_message.py stock AAPL -1.5 30
 """
 
 import sys
@@ -20,15 +19,12 @@ import urllib.request
 
 BOARD_URL = "http://matrixportal.local/add"
 
-def send(text, category="news", ttl_minutes=60):
-    payload = json.dumps({
-        "text": text,
-        "category": category,
-        "ttl_minutes": ttl_minutes,
-    }).encode()
+def post(payload, ttl_minutes=60):
+    payload["ttl_minutes"] = ttl_minutes
+    data = json.dumps(payload).encode()
     req = urllib.request.Request(
         BOARD_URL,
-        data=payload,
+        data=data,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -36,10 +32,35 @@ def send(text, category="news", ttl_minutes=60):
         print(json.loads(resp.read()))
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+    args = sys.argv[1:]
+    if not args:
         print(__doc__)
         sys.exit(1)
-    text = sys.argv[1]
-    category = sys.argv[2] if len(sys.argv) > 2 else "news"
-    ttl = float(sys.argv[3]) if len(sys.argv) > 3 else 60
-    send(text, category, ttl)
+
+    category = args[0].lower()
+
+    if category == "news":
+        # news <text> [ttl]
+        post({"category": "news", "text": args[1]},
+             ttl_minutes=float(args[2]) if len(args) > 2 else 60)
+
+    elif category == "weather":
+        # weather <condition> <temp> [ttl]
+        post({"category": "weather", "condition": args[1], "temp": float(args[2])},
+             ttl_minutes=float(args[3]) if len(args) > 3 else 120)
+
+    elif category == "stock":
+        # stock <symbol> <change%> [ttl]
+        post({"category": "stock", "symbol": args[1], "change": float(args[2])},
+             ttl_minutes=float(args[3]) if len(args) > 3 else 30)
+
+    elif category == "calendar":
+        # calendar <time> <text> [ttl]
+        post({"category": "calendar", "time": args[1], "text": args[2]},
+             ttl_minutes=float(args[3]) if len(args) > 3 else 120)
+
+    else:
+        # text <text> [ttl]  (generic fallback)
+        text = args[1] if len(args) > 1 else category
+        post({"category": "", "text": text},
+             ttl_minutes=float(args[2]) if len(args) > 2 else 60)

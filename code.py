@@ -1,14 +1,15 @@
 # MatrixPortal S3 - scrolling message queue with HTTP API
 #
-# POST /add    {"text": "...", "category": "news|weather|calendar|stock", "ttl_minutes": 60}
-# POST /clear  clears the queue
-# GET  /       returns current queue as JSON
+# POST /add      category-specific JSON payload (see send_message.py)
+# POST /clear    clears the queue
+# POST /register {"url": "..."} — openclaw self-registration
+# GET  /         returns current queue as JSON
 #
 # UP button: skip current message
 # DOWN button: clear queue
 #
 # PIR sensor on A1: display sleeps after SLEEP_TIMEOUT_SECONDS of no motion,
-# then greets with "Good morning/afternoon/evening" on next detection.
+# greets with "Good morning/afternoon/evening" on next detection.
 
 import os
 import time
@@ -18,35 +19,24 @@ import board
 import wifi
 import mdns
 import socketpool
+import ssl
 import digitalio
 import displayio
 import framebufferio
 import rgbmatrix
-import terminalio
-import ssl
 import adafruit_ntp
 import adafruit_requests
 import adafruit_connection_manager
-from adafruit_display_text import label
 from adafruit_httpserver import Server, Request, Response
+import renderers
 
-PANEL_WIDTH = 64
+PANEL_WIDTH  = 64
 PANEL_HEIGHT = 32
-MAX_QUEUE = 20
-SCROLL_DELAY = 0.04
-DEFAULT_TTL_MINUTES = 60
+MAX_QUEUE    = 20
+DEFAULT_TTL_MINUTES   = 60
 SLEEP_TIMEOUT_SECONDS = 300  # 5 minutes of no motion → sleep
 
-CATEGORY_COLORS = {
-    "news":     0xFFFFFF,  # white
-    "weather":  0x00FFFF,  # cyan
-    "calendar": 0xFFFF00,  # yellow
-    "stock":    0x00FF44,  # green
-}
-DEFAULT_COLOR  = 0xFFFFFF
-GREETING_COLOR = 0xFF8C00  # warm orange
-
-# --- Display setup ---
+# --- Display ---
 
 displayio.release_displays()
 
@@ -74,12 +64,12 @@ btn_up.switch_to_input(pull=digitalio.Pull.UP)
 btn_down = digitalio.DigitalInOut(board.BUTTON_DOWN)
 btn_down.switch_to_input(pull=digitalio.Pull.UP)
 
-# --- PIR sensor ---
+# --- PIR ---
 
 pir = digitalio.DigitalInOut(board.A1)
 pir.switch_to_input()
 
-last_motion_time = time.monotonic()
+last_motion_ref = [time.monotonic()]  # mutable so renderers can update it
 asleep = False
 
 # --- WiFi + NTP ---
@@ -100,13 +90,27 @@ try:
     t = time.localtime()
     print(f"Time synced: {t.tm_hour:02}:{t.tm_min:02}")
 except Exception as e:
-    print(f"NTP sync failed: {e} — greeting will use UTC")
+    print(f"NTP sync failed: {e}")
 
 mdns_server = mdns.Server(wifi.radio)
 mdns_server.hostname = "matrixportal"
 mdns_server.advertise_service(service_type="_http", protocol="_tcp", port=80)
 
 server = Server(pool)
+
+# --- Outbound (notify openclaw) ---
+
+_rm = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
+_requests = adafruit_requests.Session(_rm, adafruit_connection_manager.get_radio_ssl_context(wifi.radio))
+callback_url = None
+
+def notify_openclaw(event):
+    if not callback_url:
+        return
+    try:
+        _requests.post(callback_url, json={"event": event})
+    except Exception as e:
+        print(f"notify_openclaw failed: {e}")
 
 # --- Message queue ---
 
@@ -124,19 +128,15 @@ def purge_expired():
 def add_message(request: Request):
     try:
         data = json.loads(request.body)
-        text = str(data.get("text", "")).strip()
         category = str(data.get("category", "")).lower()
         ttl = float(data.get("ttl_minutes", DEFAULT_TTL_MINUTES))
-        if not text:
-            return Response(request, '{"ok":false,"reason":"missing text"}', content_type="application/json", status=(400, "Bad Request"))
         purge_expired()
         if len(message_queue) >= MAX_QUEUE:
             return Response(request, '{"ok":false,"reason":"queue full"}', content_type="application/json", status=(429, "Too Many Requests"))
-        message_queue.append({
-            "text": text,
-            "category": category,
-            "expires_at": time.monotonic() + ttl * 60,
-        })
+        msg = dict(data)
+        msg["category"] = category
+        msg["expires_at"] = time.monotonic() + ttl * 60
+        message_queue.append(msg)
         body = json.dumps({"ok": True, "queued": len(message_queue), "ttl_minutes": ttl})
         return Response(request, body, content_type="application/json")
     except Exception as e:
@@ -165,11 +165,8 @@ def clear_queue(request: Request):
 def status(request: Request):
     now = time.monotonic()
     queue_out = [
-        {
-            "text": m["text"],
-            "category": m["category"],
-            "expires_in_minutes": round((m["expires_at"] - now) / 60, 1),
-        }
+        {k: v for k, v in m.items() if k != "expires_at"} |
+        {"expires_in_minutes": round((m["expires_at"] - now) / 60, 1)}
         for m in message_queue
     ]
     body = json.dumps({"count": len(queue_out), "queue": queue_out})
@@ -178,56 +175,20 @@ def status(request: Request):
 server.start(str(wifi.radio.ipv4_address), port=80)
 print(f"Listening at http://matrixportal.local  ({wifi.radio.ipv4_address})")
 
-# --- Outbound requests (notify openclaw) ---
+# --- Renderers init ---
 
-_rm = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
-requests = adafruit_requests.Session(_rm, adafruit_connection_manager.get_radio_ssl_context(wifi.radio))
-callback_url = None
+renderers.init(display, server, pir, btn_up, btn_down, last_motion_ref, SLEEP_TIMEOUT_SECONDS)
 
-def notify_openclaw(event):
-    if not callback_url:
-        return
-    try:
-        requests.post(callback_url, json={"event": event})
-    except Exception as e:
-        print(f"notify_openclaw failed: {e}")
-
-# --- Display helpers ---
+# --- Helpers ---
 
 def clear_display():
     display.root_group = displayio.Group()
 
 def greeting_text():
     hour = time.localtime().tm_hour
-    if 5 <= hour < 12:
-        return "Good morning!"
-    if 12 <= hour < 18:
-        return "Good afternoon!"
+    if 5 <= hour < 12:  return "Good morning!"
+    if 12 <= hour < 18: return "Good afternoon!"
     return "Good evening!"
-
-def scroll_message(text, color):
-    """Scroll text across the panel. Returns 'skip', 'clear', 'sleep', or 'done'."""
-    global last_motion_time
-    text_label = label.Label(terminalio.FONT, text=text, color=color)
-    text_label.y = PANEL_HEIGHT // 2 - 3
-    group = displayio.Group()
-    group.append(text_label)
-    display.root_group = group
-
-    text_width = text_label.bounding_box[2]
-    for x in range(PANEL_WIDTH, -text_width - 1, -1):
-        server.poll()
-        if pir.value:
-            last_motion_time = time.monotonic()
-        if not btn_up.value:
-            return "skip"
-        if not btn_down.value:
-            return "clear"
-        if time.monotonic() - last_motion_time > SLEEP_TIMEOUT_SECONDS:
-            return "sleep"
-        text_label.x = x
-        time.sleep(SCROLL_DELAY)
-    return "done"
 
 # --- Main loop ---
 
@@ -242,18 +203,16 @@ while True:
             print("Motion detected — waking up")
             asleep = False
             notify_openclaw("person_detected")
-            greeting = greeting_text()
-            print(f"Greeting: {greeting}")
-            result = scroll_message(greeting, GREETING_COLOR)
+            result = renderers.render_greeting(greeting_text())
             clear_display()
             if result == "sleep":
                 asleep = True
             elif result == "clear":
                 message_queue.clear()
                 time.sleep(0.3)
-        last_motion_time = time.monotonic()
+        last_motion_ref[0] = time.monotonic()
 
-    if not asleep and time.monotonic() - last_motion_time > SLEEP_TIMEOUT_SECONDS:
+    if not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
         print("No motion — sleeping")
         clear_display()
         asleep = True
@@ -273,14 +232,13 @@ while True:
     if message_queue:
         msg = message_queue.pop(0)
         if time.monotonic() >= msg["expires_at"]:
-            print(f"Skipping expired: {msg['text']}")
+            print(f"Skipping expired: {msg}")
             continue
-        color = CATEGORY_COLORS.get(msg["category"], DEFAULT_COLOR)
-        print(f"Scrolling [{msg['category']}]: {msg['text']}")
-        result = scroll_message(msg["text"], color)
+        print(f"Rendering [{msg.get('category','')}]")
+        result = renderers.render(msg)
         clear_display()
         if result == "sleep":
-            print("No motion mid-scroll — sleeping")
+            print("No motion mid-render — sleeping")
             asleep = True
         elif result == "clear":
             message_queue.clear()
