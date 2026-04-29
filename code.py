@@ -156,6 +156,15 @@ def register(request: Request):
     except Exception as e:
         return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
 
+@server.route("/ui", "GET")
+def serve_ui(request: Request):
+    try:
+        with open("/ui.html", "r") as f:
+            html = f.read()
+        return Response(request, html, content_type="text/html")
+    except Exception as e:
+        return Response(request, f"<h1>Error loading UI: {e}</h1>", content_type="text/html")
+
 @server.route("/clear", "POST")
 def clear_queue(request: Request):
     message_queue.clear()

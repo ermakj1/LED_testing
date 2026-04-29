@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LED Display</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:sans-serif;background:#111;color:#eee;padding:24px;max-width:420px;margin:0 auto}
+h2{margin-bottom:20px;font-size:1.3em;color:#fff}
+label{display:block;font-size:11px;color:#888;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em}
+select,input{width:100%;padding:10px;background:#1e1e1e;color:#eee;border:1px solid #333;border-radius:6px;font-size:15px}
+select:focus,input:focus{outline:none;border-color:#0a84ff}
+.field{display:none}.field.on{display:block}
+button{width:100%;margin-top:20px;padding:13px;background:#0a84ff;color:#fff;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer}
+button:active{background:#006ee0}
+#msg{margin-top:14px;padding:10px;border-radius:6px;display:none;font-size:14px}
+.ok{background:#0d2e0d;color:#4cff6a;border:1px solid #1a5c1a}
+.err{background:#2e0d0d;color:#ff5c5c;border:1px solid #5c1a1a}
+</style>
+</head>
+<body>
+<h2>LED Display</h2>
+
+<label>Category</label>
+<select id="cat" onchange="update()">
+  <option value="news">News</option>
+  <option value="weather">Weather</option>
+  <option value="stock">Stock</option>
+  <option value="calendar">Calendar</option>
+  <option value="">Text</option>
+</select>
+
+<div id="f-text" class="field">
+  <label>Text</label>
+  <input id="text" type="text" placeholder="Message...">
+</div>
+<div id="f-condition" class="field">
+  <label>Condition</label>
+  <select id="condition">
+    <option>sunny</option>
+    <option>rain</option>
+    <option>snow</option>
+    <option>cloudy</option>
+    <option>storm</option>
+  </select>
+</div>
+<div id="f-temp" class="field">
+  <label>Temperature (°F)</label>
+  <input id="temp" type="number" placeholder="72">
+</div>
+<div id="f-symbol" class="field">
+  <label>Symbol</label>
+  <input id="symbol" type="text" placeholder="AAPL" style="text-transform:uppercase">
+</div>
+<div id="f-change" class="field">
+  <label>Change %</label>
+  <input id="change" type="number" step="0.1" placeholder="2.3">
+</div>
+<div id="f-cal-time" class="field">
+  <label>Time</label>
+  <input id="cal-time" type="text" placeholder="2pm">
+</div>
+
+<label>Expires in (minutes)</label>
+<input id="ttl" type="number" value="60">
+
+<button onclick="send()">Send to display</button>
+<div id="msg"></div>
+
+<script>
+const FIELDS={
+  news:['text'],
+  weather:['condition','temp'],
+  stock:['symbol','change'],
+  calendar:['cal-time','text'],
+  '':['text']
+};
+function update(){
+  const cat=document.getElementById('cat').value;
+  const show=FIELDS[cat]||[];
+  ['text','condition','temp','symbol','change','cal-time'].forEach(f=>{
+    const el=document.getElementById('f-'+f);
+    el.className='field'+(show.includes(f)?' on':'');
+  });
+}
+update();
+async function send(){
+  const cat=document.getElementById('cat').value;
+  const ttl=parseFloat(document.getElementById('ttl').value)||60;
+  const payload={category:cat,ttl_minutes:ttl};
+  (FIELDS[cat]||[]).forEach(f=>{
+    const el=document.getElementById(f);
+    const v=el.tagName==='SELECT'?el.value:el.value.trim();
+    if(f==='temp'||f==='change') payload[f]=parseFloat(v);
+    else if(f==='cal-time') payload['time']=v;
+    else payload[f]=v;
+  });
+  const msg=document.getElementById('msg');
+  try{
+    const r=await fetch('/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const j=await r.json();
+    msg.textContent=j.ok?'Queued ✓  ('+j.queued+' in queue)':'Error: '+j.reason;
+    msg.className=j.ok?'ok':'err';
+  }catch(e){
+    msg.textContent='Could not reach display: '+e;
+    msg.className='err';
+  }
+  msg.style.display='block';
+}
+</script>
+</body>
+</html>

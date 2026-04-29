@@ -10,7 +10,8 @@ fi
 
 cp code.py "$CIRCUITPY/code.py"
 cp renderers.py "$CIRCUITPY/renderers.py"
-echo "Deployed code.py + renderers.py"
+cp ui.html "$CIRCUITPY/ui.html"
+echo "Deployed code.py + renderers.py + ui.html"
 
 if [ -d "lib" ] && [ "$(ls -A lib)" ]; then
     cp -r lib/. "$CIRCUITPY/lib/"
