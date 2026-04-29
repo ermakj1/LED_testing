@@ -7,15 +7,32 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:sans-serif;background:#111;color:#eee;padding:24px;max-width:420px;margin:0 auto}
 h2{margin-bottom:20px;font-size:1.3em;color:#fff}
+h3{font-size:1em;color:#aaa;margin:28px 0 12px;display:flex;justify-content:space-between;align-items:center}
 label{display:block;font-size:11px;color:#888;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.05em}
 select,input{width:100%;padding:10px;background:#1e1e1e;color:#eee;border:1px solid #333;border-radius:6px;font-size:15px}
 select:focus,input:focus{outline:none;border-color:#0a84ff}
 .field{display:none}.field.on{display:block}
-button{width:100%;margin-top:20px;padding:13px;background:#0a84ff;color:#fff;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer}
-button:active{background:#006ee0}
+.btn{width:100%;margin-top:20px;padding:13px;background:#0a84ff;color:#fff;border:none;border-radius:6px;font-size:16px;font-weight:600;cursor:pointer}
+.btn:active{background:#006ee0}
+.btn-sm{padding:5px 10px;font-size:12px;border:none;border-radius:4px;cursor:pointer;font-weight:600}
+.btn-refresh{background:#333;color:#aaa;margin-top:0}
+.btn-clear-all{background:#3a1010;color:#ff6b6b}
 #msg{margin-top:14px;padding:10px;border-radius:6px;display:none;font-size:14px}
 .ok{background:#0d2e0d;color:#4cff6a;border:1px solid #1a5c1a}
 .err{background:#2e0d0d;color:#ff5c5c;border:1px solid #5c1a1a}
+#queue-list{margin:0;padding:0;list-style:none}
+.q-item{display:flex;align-items:center;gap:8px;padding:9px 10px;background:#1a1a1a;border-radius:6px;margin-bottom:6px}
+.q-cat{font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;text-transform:uppercase;white-space:nowrap}
+.cat-news{background:#222;color:#fff}
+.cat-weather{background:#003344;color:#00ccff}
+.cat-stock{background:#003300;color:#00cc44}
+.cat-calendar{background:#333300;color:#ffee00}
+.cat-{background:#222;color:#aaa}
+.q-text{flex:1;font-size:13px;color:#ddd;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.q-ttl{font-size:11px;color:#555;white-space:nowrap}
+.btn-del{background:#3a1010;color:#ff6b6b;padding:4px 8px;font-size:13px;border:none;border-radius:4px;cursor:pointer;flex-shrink:0}
+.btn-del:active{background:#5a1010}
+#queue-empty{color:#444;font-size:14px;text-align:center;padding:16px 0;display:none}
 </style>
 </head>
 <body>
@@ -37,11 +54,8 @@ button:active{background:#006ee0}
 <div id="f-condition" class="field">
   <label>Condition</label>
   <select id="condition">
-    <option>sunny</option>
-    <option>rain</option>
-    <option>snow</option>
-    <option>cloudy</option>
-    <option>storm</option>
+    <option>sunny</option><option>rain</option><option>snow</option>
+    <option>cloudy</option><option>storm</option>
   </select>
 </div>
 <div id="f-high" class="field">
@@ -72,27 +86,81 @@ button:active{background:#006ee0}
 <label>Expires in (minutes)</label>
 <input id="ttl" type="number" value="60">
 
-<button onclick="send()">Send to display</button>
+<button class="btn" onclick="send()">Send to display</button>
 <div id="msg"></div>
+
+<h3>
+  Queue
+  <span style="display:flex;gap:8px">
+    <button class="btn-sm btn-refresh" onclick="loadQueue()">Refresh</button>
+    <button class="btn-sm btn-clear-all" onclick="clearAll()">Clear all</button>
+  </span>
+</h3>
+<ul id="queue-list"></ul>
+<div id="queue-empty">Queue is empty</div>
 
 <script>
 const FIELDS={
-  news:['text'],
-  weather:['condition','high','low','precip'],
-  stock:['symbol','change'],
-  calendar:['cal-time','text'],
-  '':['text']
+  news:['text'],weather:['condition','high','low','precip'],
+  stock:['symbol','change'],calendar:['cal-time','text'],'':['text']
 };
 const NUMERIC=new Set(['high','low','precip','change']);
+
+function msgSummary(m){
+  if(m.category==='stock') return (m.symbol||'?')+' '+(m.change>=0?'+':'')+m.change+'%';
+  if(m.category==='weather') return (m.condition||'')+' H:'+(m.high??'?')+' L:'+(m.low??'?');
+  return m.text||m.condition||'';
+}
+
 function update(){
   const cat=document.getElementById('cat').value;
   const show=FIELDS[cat]||[];
   ['text','condition','high','low','precip','symbol','change','cal-time'].forEach(f=>{
-    const el=document.getElementById('f-'+f);
-    el.className='field'+(show.includes(f)?' on':'');
+    document.getElementById('f-'+f).className='field'+(show.includes(f)?' on':'');
   });
 }
 update();
+
+async function loadQueue(){
+  try{
+    const r=await fetch('/');
+    const j=await r.json();
+    const list=document.getElementById('queue-list');
+    const empty=document.getElementById('queue-empty');
+    list.innerHTML='';
+    if(!j.queue||j.queue.length===0){empty.style.display='block';return;}
+    empty.style.display='none';
+    j.queue.forEach(m=>{
+      const ttl=m.expires_in_minutes!=null?m.expires_in_minutes+'m':'';
+      const li=document.createElement('li');
+      li.className='q-item';
+      li.innerHTML=
+        '<span class="q-cat cat-'+m.category+'">'+( m.category||'text')+'</span>'+
+        '<span class="q-text">'+msgSummary(m)+'</span>'+
+        '<span class="q-ttl">'+ttl+'</span>'+
+        '<button class="btn-del" onclick="del('+m.id+',this)">✕</button>';
+      list.appendChild(li);
+    });
+  }catch(e){console.error(e);}
+}
+
+async function del(id,btn){
+  btn.disabled=true;
+  try{
+    await fetch('/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    btn.closest('.q-item').remove();
+    if(!document.getElementById('queue-list').children.length)
+      document.getElementById('queue-empty').style.display='block';
+  }catch(e){btn.disabled=false;}
+}
+
+async function clearAll(){
+  if(!confirm('Clear all messages?'))return;
+  await fetch('/clear',{method:'POST'});
+  document.getElementById('queue-list').innerHTML='';
+  document.getElementById('queue-empty').style.display='block';
+}
+
 async function send(){
   const cat=document.getElementById('cat').value;
   const ttl=parseFloat(document.getElementById('ttl').value)||60;
@@ -100,8 +168,8 @@ async function send(){
   (FIELDS[cat]||[]).forEach(f=>{
     const el=document.getElementById(f);
     const v=el.tagName==='SELECT'?el.value:el.value.trim();
-    if(NUMERIC.has(f)) payload[f]=parseFloat(v);
-    else if(f==='cal-time') payload['time']=v;
+    if(NUMERIC.has(f))payload[f]=parseFloat(v);
+    else if(f==='cal-time')payload['time']=v;
     else payload[f]=v;
   });
   const msg=document.getElementById('msg');
@@ -110,12 +178,16 @@ async function send(){
     const j=await r.json();
     msg.textContent=j.ok?'Queued! ('+j.queued+' in queue)':'Error: '+j.reason;
     msg.className=j.ok?'ok':'err';
+    if(j.ok)loadQueue();
   }catch(e){
     msg.textContent='Could not reach display: '+e;
     msg.className='err';
   }
   msg.style.display='block';
 }
+
+loadQueue();
+setInterval(loadQueue, 10000);
 </script>
 </body>
 </html>

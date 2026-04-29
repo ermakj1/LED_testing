@@ -115,6 +115,12 @@ def notify_openclaw(event):
 # --- Message queue ---
 
 message_queue = []
+_next_id = 0
+
+def _new_id():
+    global _next_id
+    _next_id += 1
+    return _next_id
 
 def purge_expired():
     now = time.monotonic()
@@ -136,6 +142,7 @@ def add_message(request: Request):
         msg = dict(data)
         msg["category"] = category
         msg["expires_at"] = time.monotonic() + ttl * 60
+        msg["id"] = _new_id()
         message_queue.append(msg)
         body = json.dumps({"ok": True, "queued": len(message_queue), "ttl_minutes": ttl})
         return Response(request, body, content_type="application/json")
@@ -164,6 +171,19 @@ def serve_ui(request: Request):
         return Response(request, html, content_type="text/html")
     except Exception as e:
         return Response(request, f"<h1>Error loading UI: {e}</h1>", content_type="text/html")
+
+@server.route("/delete", "POST")
+def delete_message(request: Request):
+    try:
+        data = json.loads(request.body)
+        msg_id = int(data.get("id"))
+        for m in message_queue:
+            if m.get("id") == msg_id:
+                message_queue.remove(m)
+                return Response(request, '{"ok":true}', content_type="application/json")
+        return Response(request, '{"ok":false,"reason":"not found"}', content_type="application/json", status=(404, "Not Found"))
+    except Exception as e:
+        return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
 
 @server.route("/clear", "POST")
 def clear_queue(request: Request):
