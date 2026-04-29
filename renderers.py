@@ -254,7 +254,7 @@ def render_clock():
     time_lbl.y = 0
     time_grp = displayio.Group(scale=2)
     time_grp.x = (PANEL_WIDTH - len(time_str) * 6 * 2) // 2
-    time_grp.y = 8
+    time_grp.y = 10
     time_grp.append(time_lbl)
 
     # Date: normal scale, centered
