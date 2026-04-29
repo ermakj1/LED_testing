@@ -23,7 +23,10 @@ import displayio
 import framebufferio
 import rgbmatrix
 import terminalio
+import ssl
 import adafruit_ntp
+import adafruit_requests
+import adafruit_connection_manager
 from adafruit_display_text import label
 from adafruit_httpserver import Server, Request, Response
 
@@ -161,6 +164,20 @@ def status(request: Request):
 server.start(str(wifi.radio.ipv4_address), port=80)
 print(f"Listening at http://matrixportal.local  ({wifi.radio.ipv4_address})")
 
+# --- Outbound requests (notify openclaw) ---
+
+_rm = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
+requests = adafruit_requests.Session(_rm, adafruit_connection_manager.get_radio_ssl_context(wifi.radio))
+OPENCLAW_URL = os.getenv("OPENCLAW_URL")  # e.g. http://192.168.1.x:8765/events
+
+def notify_openclaw(event):
+    if not OPENCLAW_URL:
+        return
+    try:
+        requests.post(OPENCLAW_URL, json={"event": event})
+    except Exception as e:
+        print(f"notify_openclaw failed: {e}")
+
 # --- Display helpers ---
 
 def clear_display():
@@ -210,6 +227,7 @@ while True:
         if asleep:
             print("Motion detected — waking up")
             asleep = False
+            notify_openclaw("person_detected")
             greeting = greeting_text()
             print(f"Greeting: {greeting}")
             result = scroll_message(greeting, GREETING_COLOR)
