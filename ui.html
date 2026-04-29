@@ -99,7 +99,7 @@ async function send(){
   try{
     const r=await fetch('/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const j=await r.json();
-    msg.textContent=j.ok?'Queued ✓  ('+j.queued+' in queue)':'Error: '+j.reason;
+    msg.textContent=j.ok?'Queued! ('+j.queued+' in queue)':'Error: '+j.reason;
     msg.className=j.ok?'ok':'err';
   }catch(e){
     msg.textContent='Could not reach display: '+e;
