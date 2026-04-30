@@ -329,6 +329,10 @@ def usb_disable(request: Request):
 def serve_schema(request: Request):
     schema = {
         "post_url": "/add",
+        "common_fields": {
+            "ttl_minutes": "number (optional) — expire after this many minutes",
+            "max_plays": "number (optional) — remove after being shown this many times"
+        },
         "categories": {
             "news": {
                 "description": "Scrolling news headline",
@@ -538,8 +542,17 @@ while True:
             log("Queue cleared by button")
             time.sleep(0.3)
         elif result == "done":
-            if time.monotonic() < msg["expires_at"] and msg.get("id") not in _deleted_ids:
+            msg["plays"] = msg.get("plays", 0) + 1
+            max_plays = msg.get("max_plays", None)
+            still_valid = (
+                time.monotonic() < msg["expires_at"]
+                and msg.get("id") not in _deleted_ids
+                and (max_plays is None or msg["plays"] < max_plays)
+            )
+            if still_valid:
                 message_queue.append(msg)
+            elif max_plays is not None and msg["plays"] >= max_plays:
+                log(f"Max plays reached [{msg.get('category','')}]: {_msg_summary(msg)}")
     else:
         result = renderers.render_clock()
         if result == "clear":

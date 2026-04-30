@@ -25,8 +25,8 @@ def fetch_joke():
     with urllib.request.urlopen(url, timeout=10) as resp:
         return json.loads(resp.read())
 
-def post_joke(setup=None, delivery=None, text=None, ttl_minutes=10):
-    payload = {"category": "joke", "ttl_minutes": ttl_minutes}
+def post_joke(setup=None, delivery=None, text=None, ttl_minutes=10, max_plays=1):
+    payload = {"category": "joke", "ttl_minutes": ttl_minutes, "max_plays": max_plays}
     if text:
         payload["text"] = text
     if setup:
