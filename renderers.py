@@ -346,7 +346,7 @@ def render_stock(msg):
 
     # Toggle between $ and % change every 3 seconds
     for show_pct in [False, True, False, True]:
-        chg_lbl.text = f"{sign}{change_pct:.2f}%" if show_pct else f"{sign}${dollar_change:.2f}"
+        chg_lbl.text = f"{sign}{abs(change_pct):.2f}%" if show_pct else f"{sign}${dollar_change:.2f}"
         result = _hold(3)
         if result and result != "done":
             return result

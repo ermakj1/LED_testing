@@ -156,8 +156,8 @@ def _msg_summary(m):
         if price is not None and change is not None:
             prev = price / (1 + change / 100)
             dollar = price - prev
-            sign = "+" if change >= 0 else ""
-            return f"{symbol} ${price:.2f} {sign}${dollar:.2f} ({sign}{change:.2f}%)"
+            sign = "+" if change >= 0 else "-"
+            return f"{symbol} ${price:.2f} {sign}${abs(dollar):.2f} ({sign}{abs(change):.2f}%)"
         return f"{symbol} {change}%"
     if cat == "weather": return f"{m.get('condition','?')} H:{m.get('high','?')} L:{m.get('low','?')}"
     return str(m.get("text", m.get("condition", "")))[:50]
