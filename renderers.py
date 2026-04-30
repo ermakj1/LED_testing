@@ -84,6 +84,31 @@ def _hold(seconds):
     return "done"
 
 
+def _bg(color):
+    """Return a full-panel background TileGrid in the given color."""
+    bm  = displayio.Bitmap(PANEL_WIDTH, PANEL_HEIGHT, 1)
+    pal = displayio.Palette(1)
+    pal[0] = color
+    return displayio.TileGrid(bm, pixel_shader=pal, x=0, y=0)
+
+
+def _flash(color, duration=0.15):
+    """Briefly flood the display with color (e.g. green/red on stock move)."""
+    grp = displayio.Group()
+    grp.append(_bg(color))
+    _display.root_group = grp
+    time.sleep(duration)
+
+
+def _clock_color():
+    """Return a time-of-day color for the clock."""
+    h = time.localtime().tm_hour
+    if 5  <= h < 8:  return 0xFF6600  # dawn — orange
+    if 8  <= h < 17: return 0xFFFFFF  # day  — white
+    if 17 <= h < 20: return 0xFF8800  # dusk — amber
+    return 0x4466FF                    # night — blue
+
+
 # ---------------------------------------------------------------------------
 # Icon drawing (16×16 bitmap, transparent background)
 # ---------------------------------------------------------------------------
@@ -243,13 +268,13 @@ _MONTHS = ("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","De
 
 def render_clock():
     """Show time + date for ~1 second, polling server. Returns action or 'done'."""
-    t = time.localtime()
-    hour = t.tm_hour % 12 or 12
+    t        = time.localtime()
+    color    = _clock_color()
+    hour     = t.tm_hour % 12 or 12
     time_str = f"{hour}:{t.tm_min:02}"
     date_str = f"{_WDAYS[t.tm_wday]} {_MONTHS[t.tm_mon-1]} {t.tm_mday}"
 
-    # Time: scaled x2 via a Group
-    time_lbl = label.Label(terminalio.FONT, text=time_str, color=0xFFFFFF)
+    time_lbl = label.Label(terminalio.FONT, text=time_str, color=color)
     time_lbl.x = 0
     time_lbl.y = 0
     time_grp = displayio.Group(scale=2)
@@ -257,14 +282,21 @@ def render_clock():
     time_grp.y = 10
     time_grp.append(time_lbl)
 
-    # Date: normal scale, centered
-    date_lbl = label.Label(terminalio.FONT, text=date_str, color=0x555555)
+    date_lbl = label.Label(terminalio.FONT, text=date_str, color=0x444444)
     date_lbl.x = (PANEL_WIDTH - len(date_str) * 6) // 2
     date_lbl.y = 25
 
     group = displayio.Group()
     group.append(time_grp)
     group.append(date_lbl)
+
+    # Seconds progress bar along the bottom (updates each time clock redraws)
+    bar_w = max(1, int(t.tm_sec * PANEL_WIDTH / 60))
+    bar_bm  = displayio.Bitmap(bar_w, 2, 1)
+    bar_pal = displayio.Palette(1)
+    bar_pal[0] = color
+    group.append(displayio.TileGrid(bar_bm, pixel_shader=bar_pal, x=0, y=30))
+
     _display.root_group = group
 
     end = time.monotonic() + 1
@@ -289,15 +321,17 @@ def render_generic(msg):
     lbl = label.Label(terminalio.FONT, text=msg.get("text", ""), color=0xFFFFFF)
     lbl.y = PANEL_HEIGHT // 2 - 3
     group = displayio.Group()
+    group.append(_bg(0x0A0A0A))
     group.append(lbl)
     _display.root_group = group
     return _scroll_label(lbl)
 
 
 def render_news(msg):
-    lbl = label.Label(terminalio.FONT, text=msg.get("text", ""), color=0xFF2200)
+    lbl = label.Label(terminalio.FONT, text=msg.get("text", ""), color=0xDD88FF)
     lbl.y = PANEL_HEIGHT // 2 - 3
     group = displayio.Group()
+    group.append(_bg(0x0C0018))
     group.append(lbl)
     _display.root_group = group
     return _scroll_label(lbl)
@@ -307,9 +341,10 @@ def render_calendar(msg):
     time_str = msg.get("time", "")
     text     = msg.get("text", "")
     full     = f"{time_str}: {text}" if time_str else text
-    lbl = label.Label(terminalio.FONT, text=full, color=0xFFFF00)
+    lbl = label.Label(terminalio.FONT, text=full, color=0xFFEE44)
     lbl.y = PANEL_HEIGHT // 2 - 3
     group = displayio.Group()
+    group.append(_bg(0x0C0A00))
     group.append(lbl)
     _display.root_group = group
     return _scroll_label(lbl)
@@ -319,12 +354,17 @@ def render_stock(msg):
     symbol     = msg.get("symbol", "???").upper()
     change_pct = float(msg.get("change", 0))
     price      = float(msg.get("price", 0))
-    chg_color  = 0x00FF44 if change_pct >= 0 else 0xFF3300
-    sign       = "+" if change_pct >= 0 else "-"
+    is_up      = change_pct >= 0
+    chg_color  = 0x00FF44 if is_up else 0xFF3300
+    bg_color   = 0x001500 if is_up else 0x150000
+    sign       = "+" if is_up else "-"
 
-    # Dollar change derived from price and percent
-    prev_close   = price / (1 + change_pct / 100) if price else 0
+    prev_close    = price / (1 + change_pct / 100) if price else 0
     dollar_change = abs(price - prev_close)
+
+    # Flash the panel on significant moves (>= 2%)
+    if abs(change_pct) >= 2:
+        _flash(0x003300 if is_up else 0x330000)
 
     sym_lbl = label.Label(terminalio.FONT, text=symbol, color=0xFFFFFF)
     sym_lbl.x = 2
@@ -339,6 +379,7 @@ def render_stock(msg):
     chg_lbl.y = 26
 
     group = displayio.Group()
+    group.append(_bg(bg_color))
     group.append(sym_lbl)
     group.append(price_lbl)
     group.append(chg_lbl)
@@ -376,6 +417,7 @@ def render_weather(msg):
 
     # Static text: high, low, precip on the other half
     group = displayio.Group()
+    group.append(_bg(0x000A18))
     group.append(icon_grp)
 
     def add_label(text, color, y):
