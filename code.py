@@ -115,6 +115,7 @@ def notify_openclaw(event):
 # --- Message queue ---
 
 message_queue = []
+_deleted_ids  = set()
 _next_id = 0
 
 def _new_id():
@@ -177,11 +178,11 @@ def delete_message(request: Request):
     try:
         data = json.loads(request.body)
         msg_id = int(data.get("id"))
+        _deleted_ids.add(msg_id)
         for m in message_queue:
             if m.get("id") == msg_id:
                 message_queue.remove(m)
-                return Response(request, '{"ok":true}', content_type="application/json")
-        return Response(request, '{"ok":false,"reason":"not found"}', content_type="application/json", status=(404, "Not Found"))
+        return Response(request, '{"ok":true}', content_type="application/json")
     except Exception as e:
         return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
 
@@ -274,7 +275,7 @@ while True:
             print("Queue cleared by button")
             time.sleep(0.3)
         elif result == "done":
-            if time.monotonic() < msg["expires_at"]:
+            if time.monotonic() < msg["expires_at"] and msg.get("id") not in _deleted_ids:
                 message_queue.append(msg)
     else:
         result = renderers.render_clock()
