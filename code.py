@@ -37,6 +37,7 @@ DEFAULT_TTL_MINUTES   = 60
 SLEEP_TIMEOUT_SECONDS = 300   # 5 minutes of no motion → sleep
 PIR_ENABLED           = False # set True when PIR sensor is wired to A1
 HEARTBEAT_SECONDS     = 60    # log a heartbeat this often while sleeping
+# Buttons: UP wakes from sleep / skips message. DOWN sleeps immediately.
 
 # --- Display ---
 
@@ -251,9 +252,7 @@ print("Ready")
 while True:
     server.poll()
 
-    if not PIR_ENABLED:
-        last_motion_ref[0] = time.monotonic()  # always appear active
-    elif pir_active():
+    if pir_active():
         if asleep:
             slept = int(time.monotonic() - sleep_start) if sleep_start else 0
             print(f"Motion detected — waking up (slept {slept}s)")
@@ -269,7 +268,7 @@ while True:
                 time.sleep(0.3)
         last_motion_ref[0] = time.monotonic()
 
-    if not asleep and PIR_ENABLED and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
+    if not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
         print(f"No motion for {SLEEP_TIMEOUT_SECONDS}s — sleeping")
         clear_display()
         asleep         = True
@@ -281,13 +280,33 @@ while True:
         if now - last_heartbeat >= HEARTBEAT_SECONDS:
             print(f"Still sleeping... ({int(now - sleep_start)}s)")
             last_heartbeat = now
+        if not btn_up.value:
+            slept = int(time.monotonic() - sleep_start) if sleep_start else 0
+            print(f"Woken by UP button (slept {slept}s)")
+            asleep = False
+            sleep_start = None
+            last_motion_ref[0] = time.monotonic()
+            notify_openclaw("person_detected")
+            result = renderers.render_greeting(greeting_text())
+            clear_display()
+            if result == "clear":
+                message_queue.clear()
+            time.sleep(0.3)
         server.poll()
         time.sleep(0.1)
         continue
 
     if not btn_down.value:
-        message_queue.clear()
-        print("Queue cleared by button")
+        print("DOWN button — sleeping")
+        clear_display()
+        asleep         = True
+        sleep_start    = time.monotonic()
+        last_heartbeat = time.monotonic()
+        time.sleep(0.3)
+        continue
+
+    if not btn_up.value:
+        last_motion_ref[0] = time.monotonic()  # reset inactivity timer
         time.sleep(0.3)
         continue
 
