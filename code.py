@@ -34,7 +34,9 @@ PANEL_WIDTH  = 64
 PANEL_HEIGHT = 32
 MAX_QUEUE    = 20
 DEFAULT_TTL_MINUTES   = 60
-SLEEP_TIMEOUT_SECONDS = 300  # 5 minutes of no motion → sleep
+SLEEP_TIMEOUT_SECONDS = 300   # 5 minutes of no motion → sleep
+PIR_ENABLED           = False # set True when PIR sensor is wired to A1
+HEARTBEAT_SECONDS     = 60    # log a heartbeat this often while sleeping
 
 # --- Display ---
 
@@ -69,8 +71,13 @@ btn_down.switch_to_input(pull=digitalio.Pull.UP)
 pir = digitalio.DigitalInOut(board.A1)
 pir.switch_to_input()
 
-last_motion_ref = [time.monotonic()]  # mutable so renderers can update it
-asleep = False
+last_motion_ref = [time.monotonic()]
+asleep          = False
+sleep_start     = None
+last_heartbeat  = None
+
+def pir_active():
+    return PIR_ENABLED and pir.value
 
 # --- WiFi + NTP ---
 
@@ -117,20 +124,25 @@ def notify_openclaw(event):
 message_queue = []
 _deleted_ids  = set()
 _next_id      = 0
-current_msg   = None  # message currently being rendered
+current_msg   = None
 
 def _new_id():
     global _next_id
     _next_id += 1
     return _next_id
 
+def _msg_summary(m):
+    cat = m.get("category", "")
+    if cat == "stock":   return f"{m.get('symbol','?')} {m.get('change','?')}%"
+    if cat == "weather": return f"{m.get('condition','?')} H:{m.get('high','?')} L:{m.get('low','?')}"
+    return str(m.get("text", m.get("condition", "")))[:50]
+
 def purge_expired():
     now = time.monotonic()
     expired = [m for m in message_queue if now >= m["expires_at"]]
     for m in expired:
         message_queue.remove(m)
-    if expired:
-        print(f"Purged {len(expired)} expired, {len(message_queue)} remaining")
+        print(f"Expired [{m.get('category','')}]: {_msg_summary(m)}")
 
 @server.route("/add", "POST")
 def add_message(request: Request):
@@ -146,6 +158,7 @@ def add_message(request: Request):
         msg["expires_at"] = time.monotonic() + ttl * 60
         msg["id"] = _new_id()
         message_queue.append(msg)
+        print(f"Queued [{category}]: {_msg_summary(msg)}  (ttl={ttl}m, queue={len(message_queue)})")
         body = json.dumps({"ok": True, "queued": len(message_queue), "ttl_minutes": ttl})
         return Response(request, body, content_type="application/json")
     except Exception as e:
@@ -183,6 +196,10 @@ def delete_message(request: Request):
         for m in message_queue:
             if m.get("id") == msg_id:
                 message_queue.remove(m)
+                print(f"Deleted [{m.get('category','')}]: {_msg_summary(m)}")
+                break
+        else:
+            print(f"Deleted id={msg_id} (was playing)")
         return Response(request, '{"ok":true}', content_type="application/json")
     except Exception as e:
         return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
@@ -190,6 +207,7 @@ def delete_message(request: Request):
 @server.route("/clear", "POST")
 def clear_queue(request: Request):
     message_queue.clear()
+    print("Queue cleared via HTTP")
     return Response(request, '{"ok":true}', content_type="application/json")
 
 @server.route("/", "GET")
@@ -207,6 +225,8 @@ def status(request: Request):
 
 server.start(str(wifi.radio.ipv4_address), port=80)
 print(f"Listening at http://matrixportal.local  ({wifi.radio.ipv4_address})")
+if not PIR_ENABLED:
+    print("PIR disabled — display will not sleep (set PIR_ENABLED=True when sensor is connected)")
 
 # --- Renderers init ---
 
@@ -231,10 +251,14 @@ print("Ready")
 while True:
     server.poll()
 
-    if pir.value:
+    if not PIR_ENABLED:
+        last_motion_ref[0] = time.monotonic()  # always appear active
+    elif pir_active():
         if asleep:
-            print("Motion detected — waking up")
-            asleep = False
+            slept = int(time.monotonic() - sleep_start) if sleep_start else 0
+            print(f"Motion detected — waking up (slept {slept}s)")
+            asleep      = False
+            sleep_start = None
             notify_openclaw("person_detected")
             result = renderers.render_greeting(greeting_text())
             clear_display()
@@ -245,12 +269,19 @@ while True:
                 time.sleep(0.3)
         last_motion_ref[0] = time.monotonic()
 
-    if not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
-        print("No motion — sleeping")
+    if not asleep and PIR_ENABLED and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
+        print(f"No motion for {SLEEP_TIMEOUT_SECONDS}s — sleeping")
         clear_display()
-        asleep = True
+        asleep         = True
+        sleep_start    = time.monotonic()
+        last_heartbeat = time.monotonic()
 
     if asleep:
+        now = time.monotonic()
+        if now - last_heartbeat >= HEARTBEAT_SECONDS:
+            print(f"Still sleeping... ({int(now - sleep_start)}s)")
+            last_heartbeat = now
+        server.poll()
         time.sleep(0.1)
         continue
 
@@ -265,16 +296,18 @@ while True:
     if message_queue:
         msg = message_queue.pop(0)
         if time.monotonic() >= msg["expires_at"]:
-            print(f"Skipping expired: {msg}")
+            print(f"Skipping expired [{msg.get('category','')}]: {_msg_summary(msg)}")
             continue
         current_msg = msg
-        print(f"Rendering [{msg.get('category','')}]")
+        print(f"Displaying [{msg.get('category','')}]: {_msg_summary(msg)}")
         result = renderers.render(msg)
         current_msg = None
         clear_display()
         if result == "sleep":
-            print("No motion mid-render — sleeping")
-            asleep = True
+            print("No motion mid-display — sleeping")
+            asleep         = True
+            sleep_start    = time.monotonic()
+            last_heartbeat = time.monotonic()
         elif result == "clear":
             message_queue.clear()
             print("Queue cleared by button")
@@ -288,4 +321,6 @@ while True:
             message_queue.clear()
         elif result == "sleep":
             clear_display()
-            asleep = True
+            asleep         = True
+            sleep_start    = time.monotonic()
+            last_heartbeat = time.monotonic()
