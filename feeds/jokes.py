@@ -21,7 +21,7 @@ import urllib.request
 BOARD_URL = "http://matrixportal.local:8080/add"
 
 def fetch_joke():
-    url = "https://v2.jokeapi.dev/joke/Any?safe-mode&blacklistFlags=nsfw,religious,political,racist,sexist"
+    url = "https://v2.jokeapi.dev/joke/Any?safe-mode&blacklistFlags=nsfw,religious,political,racist,sexist&maxLength=120"
     with urllib.request.urlopen(url, timeout=10) as resp:
         return json.loads(resp.read())
 

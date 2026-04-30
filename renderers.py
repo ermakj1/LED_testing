@@ -91,7 +91,7 @@ def _wrap(text, max_chars):
 
 
 def _show_text(text, color, bg_color, hold_secs=3):
-    """Show text statically — scale=2 if short, 2-line wrap if medium, scroll if long."""
+    """Show text statically — scale=2 if short, wrapped lines if medium, scroll if long."""
     chars_per_line = PANEL_WIDTH // 6  # 10 at scale=1
 
     if len(text) <= PANEL_WIDTH // 12:
@@ -110,12 +110,16 @@ def _show_text(text, color, bg_color, hold_secs=3):
         return _hold(hold_secs)
 
     lines = _wrap(text, chars_per_line)
-    if len(lines) <= 2:
-        # Fits on 1-2 lines, show static
+    # Y centers for 1-3 lines, leaving room for descenders on last line
+    y_map = {
+        1: [14],
+        2: [9, 21],
+        3: [6, 15, 24],
+    }
+    if len(lines) <= 3:
         grp = displayio.Group()
         grp.append(_bg(bg_color))
-        y_positions = [12, 24] if len(lines) == 2 else [16]
-        for line, y in zip(lines, y_positions):
+        for line, y in zip(lines, y_map[len(lines)]):
             lbl = label.Label(terminalio.FONT, text=line, color=color)
             lbl.x = (PANEL_WIDTH - len(line) * 6) // 2
             lbl.y = y
