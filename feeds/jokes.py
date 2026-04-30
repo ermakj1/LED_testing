@@ -25,8 +25,14 @@ def fetch_joke():
     with urllib.request.urlopen(url, timeout=10) as resp:
         return json.loads(resp.read())
 
-def post_text(text, ttl_minutes):
-    payload = {"category": "text", "text": text, "ttl_minutes": ttl_minutes}
+def post_joke(setup=None, delivery=None, text=None, ttl_minutes=10):
+    payload = {"category": "joke", "ttl_minutes": ttl_minutes}
+    if text:
+        payload["text"] = text
+    if setup:
+        payload["setup"] = setup
+    if delivery:
+        payload["delivery"] = delivery
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
         BOARD_URL,
@@ -50,13 +56,10 @@ def main():
         try:
             joke = fetch_joke()
             if joke["type"] == "twopart":
-                # Send setup and punchline as back-to-back messages
-                # Punchline TTL is longer so it stays up after setup finishes
-                post_text(joke["setup"], ttl_minutes=5)
-                post_text(joke["delivery"], ttl_minutes=8)
+                post_joke(setup=joke["setup"], delivery=joke["delivery"], ttl_minutes=10)
                 print(f"Joke: {joke['setup']} / {joke['delivery']}")
             else:
-                post_text(joke["joke"], ttl_minutes=8)
+                post_joke(text=joke["joke"], ttl_minutes=10)
                 print(f"Joke: {joke['joke']}")
         except Exception as e:
             print(f"Error: {e}")

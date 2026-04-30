@@ -162,6 +162,10 @@ def _msg_summary(m):
             return f"{symbol} ${price:.2f} {sign}${abs(dollar):.2f} ({sign}{abs(change):.2f}%)"
         return f"{symbol} {change}%"
     if cat == "weather": return f"{m.get('condition','?')} H:{m.get('high','?')} L:{m.get('low','?')}"
+    if cat == "joke":
+        setup = m.get("setup", m.get("text", ""))
+        delivery = m.get("delivery", "")
+        return (setup[:30] + " / " + delivery[:20]) if delivery else setup[:50]
     return str(m.get("text", m.get("condition", "")))[:50]
 
 def purge_expired():
@@ -363,6 +367,15 @@ def serve_schema(request: Request):
                 "description": "Generic plain text message",
                 "fields": {
                     "text": "string (required) — message to display",
+                    "ttl_minutes": "number (optional, default 60)"
+                }
+            },
+            "joke": {
+                "description": "Joke with optional punchline — setup scrolls, then animated pause, then delivery",
+                "fields": {
+                    "setup": "string — joke setup (or use text for single-line jokes)",
+                    "delivery": "string (optional) — punchline",
+                    "text": "string — single-line joke (alternative to setup/delivery)",
                     "ttl_minutes": "number (optional, default 60)"
                 }
             }

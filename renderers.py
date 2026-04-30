@@ -260,6 +260,7 @@ def render(msg):
     if category == "stock":    return render_stock(msg)
     if category == "news":     return render_news(msg)
     if category == "calendar": return render_calendar(msg)
+    if category == "joke":     return render_joke(msg)
     return render_generic(msg)
 
 
@@ -392,6 +393,48 @@ def render_stock(msg):
         if result and result != "done":
             return result
     return "done"
+
+
+def render_joke(msg):
+    setup    = msg.get("setup", msg.get("text", ""))
+    delivery = msg.get("delivery", "")
+    joke_bg  = 0x080A00  # dark green-tinted black
+
+    if setup:
+        lbl = label.Label(terminalio.FONT, text=setup, color=0xFFCC44)
+        lbl.y = PANEL_HEIGHT // 2 - 3
+        grp = displayio.Group()
+        grp.append(_bg(joke_bg))
+        grp.append(lbl)
+        _display.root_group = grp
+        result = _scroll_label(lbl)
+        if result and result != "done":
+            return result
+
+    if not delivery:
+        return "done"
+
+    # Animated "..." — dots appear one by one, then hold
+    for dots in (".", "..", "..."):
+        dot_lbl = label.Label(terminalio.FONT, text=dots, color=0x668833)
+        dot_lbl.x = (PANEL_WIDTH - len(dots) * 6) // 2
+        dot_lbl.y = PANEL_HEIGHT // 2 - 3
+        grp = displayio.Group()
+        grp.append(_bg(joke_bg))
+        grp.append(dot_lbl)
+        _display.root_group = grp
+        result = _hold(0.5)
+        if result and result != "done":
+            return result
+
+    # Punchline
+    lbl = label.Label(terminalio.FONT, text=delivery, color=0xFFFF88)
+    lbl.y = PANEL_HEIGHT // 2 - 3
+    grp = displayio.Group()
+    grp.append(_bg(joke_bg))
+    grp.append(lbl)
+    _display.root_group = grp
+    return _scroll_label(lbl)
 
 
 def render_weather(msg):
