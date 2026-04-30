@@ -140,7 +140,7 @@ async function loadQueue(){
         '<span class="q-text">'+msgSummary(m)+'</span>'+
         (m.playing?'<span class="playing">▶ now</span>':'')+
         '<span class="q-ttl">'+ttl+'</span>'+
-        '<button class="btn-del" onclick="del('+m.id+',this)">✕</button>';
+        '<button class="btn-del" onclick="del('+m.id+',this)">X</button>';
       list.appendChild(li);
     });
   }catch(e){console.error(e);}
