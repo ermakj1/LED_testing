@@ -22,15 +22,17 @@ def fetch_quote(symbol):
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read())
     meta = data["chart"]["result"][0]["meta"]
+    market_state = meta.get("marketState", "CLOSED")
     price = meta["regularMarketPrice"]
     prev_close = meta["chartPreviousClose"]
     change_pct = round((price - prev_close) / prev_close * 100, 2)
-    return price, change_pct
+    return price, change_pct, market_state
 
-def post_to_board(symbol, change, ttl_minutes):
+def post_to_board(symbol, price, change, ttl_minutes):
     payload = {
         "category": "stock",
         "symbol": symbol,
+        "price": round(price, 2),
         "change": change,
         "ttl_minutes": ttl_minutes,
     }
@@ -53,17 +55,18 @@ def main():
 
     symbol = args.symbol.upper()
     interval = args.interval
-    # TTL slightly longer than interval so it stays visible until next update
-    ttl = interval + 1
 
     if not args.once:
         print(f"Sending {symbol} every {interval} min to {BOARD_URL}")
 
     while True:
         try:
-            price, change = fetch_quote(symbol)
-            result = post_to_board(symbol, change, ttl)
-            print(f"{symbol}  ${price:.2f}  {change:+.2f}%  → {result}")
+            price, change, market_state = fetch_quote(symbol)
+            if market_state != "REGULAR":
+                print(f"{symbol}  market {market_state} — skipping")
+            else:
+                result = post_to_board(symbol, price, change, ttl_minutes=interval)
+                print(f"{symbol}  ${price:.2f}  {change:+.2f}%  → {result}")
         except Exception as e:
             print(f"Error: {e}")
 

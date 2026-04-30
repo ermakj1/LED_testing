@@ -411,7 +411,7 @@ while True:
                 time.sleep(0.3)
         last_motion_ref[0] = time.monotonic()
 
-    if not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
+    if PIR_ENABLED and not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
         log(f"No motion for {SLEEP_TIMEOUT_SECONDS}s — sleeping")
         clear_display()
         asleep         = True

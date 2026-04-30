@@ -316,24 +316,41 @@ def render_calendar(msg):
 
 
 def render_stock(msg):
-    symbol = msg.get("symbol", "???").upper()
-    change = float(msg.get("change", 0))
-    prefix = "+" if change >= 0 else ""
-    chg_color = 0x00FF44 if change >= 0 else 0xFF3300
+    symbol     = msg.get("symbol", "???").upper()
+    change_pct = float(msg.get("change", 0))
+    price      = float(msg.get("price", 0))
+    chg_color  = 0x00FF44 if change_pct >= 0 else 0xFF3300
+    sign       = "+" if change_pct >= 0 else "-"
+
+    # Dollar change derived from price and percent
+    prev_close   = price / (1 + change_pct / 100) if price else 0
+    dollar_change = abs(price - prev_close)
 
     sym_lbl = label.Label(terminalio.FONT, text=symbol, color=0xFFFFFF)
     sym_lbl.x = 2
-    sym_lbl.y = 10
+    sym_lbl.y = 6
 
-    chg_lbl = label.Label(terminalio.FONT, text=f"{prefix}{change:.1f}%", color=chg_color)
+    price_lbl = label.Label(terminalio.FONT, text=f"${price:.2f}", color=0xAAAAAA)
+    price_lbl.x = 2
+    price_lbl.y = 16
+
+    chg_lbl = label.Label(terminalio.FONT, text="", color=chg_color)
     chg_lbl.x = 2
-    chg_lbl.y = 22
+    chg_lbl.y = 26
 
     group = displayio.Group()
     group.append(sym_lbl)
+    group.append(price_lbl)
     group.append(chg_lbl)
     _display.root_group = group
-    return _hold(3)
+
+    # Toggle between $ and % change every 3 seconds
+    for show_pct in [False, True, False, True]:
+        chg_lbl.text = f"{sign}{change_pct:.2f}%" if show_pct else f"{sign}${dollar_change:.2f}"
+        result = _hold(3)
+        if result:
+            return result
+    return "done"
 
 
 def render_weather(msg):
