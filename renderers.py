@@ -348,7 +348,7 @@ def render_stock(msg):
     for show_pct in [False, True, False, True]:
         chg_lbl.text = f"{sign}{change_pct:.2f}%" if show_pct else f"{sign}${dollar_change:.2f}"
         result = _hold(3)
-        if result:
+        if result and result != "done":
             return result
     return "done"
 

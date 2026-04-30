@@ -62,8 +62,8 @@ def main():
     while True:
         try:
             price, change, market_state = fetch_quote(symbol)
-            if market_state != "REGULAR":
-                print(f"{symbol}  market {market_state} — skipping")
+            if market_state == "CLOSED":
+                print(f"{symbol}  market closed — skipping")
             else:
                 result = post_to_board(symbol, price, change, ttl_minutes=interval)
                 print(f"{symbol}  ${price:.2f}  {change:+.2f}%  → {result}")
