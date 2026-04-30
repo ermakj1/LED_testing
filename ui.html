@@ -91,6 +91,16 @@ select:focus,input:focus{outline:none;border-color:#0a84ff}
 <div id="msg"></div>
 
 <h3>
+  USB Drive
+  <span id="usb-status" style="font-size:11px;color:#555">...</span>
+</h3>
+<div style="display:flex;gap:8px">
+  <button class="btn-sm" id="btn-usb-enable" onclick="setUsb(true)" style="background:#1a3a1a;color:#4cff6a;flex:1">Enable USB</button>
+  <button class="btn-sm" id="btn-usb-disable" onclick="setUsb(false)" style="background:#3a1010;color:#ff6b6b;flex:1">Disable USB</button>
+</div>
+<div id="usb-msg" style="font-size:12px;color:#888;margin-top:8px;display:none"></div>
+
+<h3>
   Queue
   <span style="display:flex;gap:8px">
     <button class="btn-sm btn-refresh" onclick="loadQueue()">Refresh</button>
@@ -190,6 +200,29 @@ async function send(){
 
 loadQueue();
 setInterval(loadQueue, 10000);
+
+async function loadUsb(){
+  try{
+    const r=await fetch('/usb');
+    const j=await r.json();
+    const enabled=j.usb_enabled;
+    document.getElementById('usb-status').textContent=enabled?'enabled':'disabled';
+    document.getElementById('usb-status').style.color=enabled?'#4cff6a':'#ff6b6b';
+    document.getElementById('btn-usb-enable').disabled=enabled;
+    document.getElementById('btn-usb-disable').disabled=!enabled;
+  }catch(e){}
+}
+
+async function setUsb(enable){
+  const usbMsg=document.getElementById('usb-msg');
+  usbMsg.style.display='block';
+  usbMsg.textContent=(enable?'Enabling USB':'Disabling USB')+' — board will reboot...';
+  try{
+    await fetch(enable?'/usb/enable':'/usb/disable',{method:'POST'});
+  }catch(e){}
+}
+
+loadUsb();
 </script>
 </body>
 </html>

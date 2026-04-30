@@ -18,6 +18,7 @@ import json
 import board
 import wifi
 import mdns
+import supervisor
 import socketpool
 import ssl
 import digitalio
@@ -37,7 +38,20 @@ DEFAULT_TTL_MINUTES   = 60
 SLEEP_TIMEOUT_SECONDS = 300   # 5 minutes of no motion → sleep
 PIR_ENABLED           = False # set True when PIR sensor is wired to A1
 HEARTBEAT_SECONDS     = 60    # log a heartbeat this often while sleeping
+LOG_MAX_LINES         = 100
 # Buttons: UP wakes from sleep / skips message. DOWN sleeps immediately.
+
+# --- Log buffer ---
+
+_log_lines = []
+
+def log(msg):
+    print(msg)
+    t = time.localtime()
+    entry = f"{t.tm_hour:02}:{t.tm_min:02}:{t.tm_sec:02}  {msg}"
+    _log_lines.append(entry)
+    if len(_log_lines) > LOG_MAX_LINES:
+        _log_lines.pop(0)
 
 # --- Display ---
 
@@ -82,12 +96,12 @@ def pir_active():
 
 # --- WiFi + NTP ---
 
-print("Connecting to WiFi...")
+log("Connecting to WiFi...")
 wifi.radio.connect(
     os.getenv("CIRCUITPY_WIFI_SSID"),
     os.getenv("CIRCUITPY_WIFI_PASSWORD"),
 )
-print(f"Connected: {wifi.radio.ipv4_address}")
+log(f"Connected: {wifi.radio.ipv4_address}")
 
 pool = socketpool.SocketPool(wifi.radio)
 
@@ -96,9 +110,9 @@ ntp = adafruit_ntp.NTP(pool, tz_offset=tz_offset, socket_timeout=10)
 try:
     rtc.RTC().datetime = ntp.datetime
     t = time.localtime()
-    print(f"Time synced: {t.tm_hour:02}:{t.tm_min:02}")
+    log(f"Time synced: {t.tm_hour:02}:{t.tm_min:02}")
 except Exception as e:
-    print(f"NTP sync failed: {e}")
+    log(f"NTP sync failed: {e}")
 
 mdns_server = mdns.Server(wifi.radio)
 mdns_server.hostname = "matrixportal"
@@ -118,14 +132,15 @@ def notify_openclaw(event):
     try:
         _requests.post(callback_url, json={"event": event})
     except Exception as e:
-        print(f"notify_openclaw failed: {e}")
+        log(f"notify_openclaw failed: {e}")
 
 # --- Message queue ---
 
-message_queue = []
-_deleted_ids  = set()
-_next_id      = 0
-current_msg   = None
+message_queue  = []
+_deleted_ids   = set()
+_next_id       = 0
+current_msg    = None
+_pending_reload = False
 
 def _new_id():
     global _next_id
@@ -143,7 +158,7 @@ def purge_expired():
     expired = [m for m in message_queue if now >= m["expires_at"]]
     for m in expired:
         message_queue.remove(m)
-        print(f"Expired [{m.get('category','')}]: {_msg_summary(m)}")
+        log(f"Expired [{m.get('category','')}]: {_msg_summary(m)}")
 
 @server.route("/add", "POST")
 def add_message(request: Request):
@@ -159,7 +174,7 @@ def add_message(request: Request):
         msg["expires_at"] = time.monotonic() + ttl * 60
         msg["id"] = _new_id()
         message_queue.append(msg)
-        print(f"Queued [{category}]: {_msg_summary(msg)}  (ttl={ttl}m, queue={len(message_queue)})")
+        log(f"Queued [{category}]: {_msg_summary(msg)}  (ttl={ttl}m, queue={len(message_queue)})")
         body = json.dumps({"ok": True, "queued": len(message_queue), "ttl_minutes": ttl})
         return Response(request, body, content_type="application/json")
     except Exception as e:
@@ -174,7 +189,7 @@ def register(request: Request):
         if not url:
             return Response(request, '{"ok":false,"reason":"missing url"}', content_type="application/json", status=(400, "Bad Request"))
         callback_url = url
-        print(f"Registered callback: {callback_url}")
+        log(f"Registered callback: {callback_url}")
         return Response(request, '{"ok":true}', content_type="application/json")
     except Exception as e:
         return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
@@ -197,10 +212,10 @@ def delete_message(request: Request):
         for m in message_queue:
             if m.get("id") == msg_id:
                 message_queue.remove(m)
-                print(f"Deleted [{m.get('category','')}]: {_msg_summary(m)}")
+                log(f"Deleted [{m.get('category','')}]: {_msg_summary(m)}")
                 break
         else:
-            print(f"Deleted id={msg_id} (was playing)")
+            log(f"Deleted id={msg_id} (was playing)")
         return Response(request, '{"ok":true}', content_type="application/json")
     except Exception as e:
         return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
@@ -208,8 +223,131 @@ def delete_message(request: Request):
 @server.route("/clear", "POST")
 def clear_queue(request: Request):
     message_queue.clear()
-    print("Queue cleared via HTTP")
+    log("Queue cleared via HTTP")
     return Response(request, '{"ok":true}', content_type="application/json")
+
+@server.route("/upload", "POST")
+def upload_file(request: Request):
+    path = request.headers.get("X-Path", "").strip().lstrip("/")
+    if not path or ".." in path:
+        return Response(request, '{"ok":false,"reason":"invalid path"}', content_type="application/json", status=(400, "Bad Request"))
+    try:
+        full_path = "/" + path
+        parent = full_path.rsplit("/", 1)[0]
+        if parent and parent != "/":
+            try:
+                os.mkdir(parent)
+            except OSError:
+                pass
+        with open(full_path, "wb") as f:
+            f.write(request.body)
+        log(f"Uploaded {path} ({len(request.body)}b)")
+        return Response(request, '{"ok":true}', content_type="application/json")
+    except Exception as e:
+        return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(500, "Internal Server Error"))
+
+@server.route("/reload", "POST")
+def reload_board(request: Request):
+    global _pending_reload
+    _pending_reload = True
+    log("Reload requested")
+    return Response(request, '{"ok":true}', content_type="application/json")
+
+@server.route("/usb", "GET")
+def usb_status(request: Request):
+    try:
+        open("/usb_enabled", "r").close()
+        enabled = True
+    except OSError:
+        enabled = False
+    return Response(request, json.dumps({"usb_enabled": enabled}), content_type="application/json")
+
+@server.route("/usb/enable", "POST")
+def usb_enable(request: Request):
+    global _pending_reload
+    try:
+        with open("/usb_enabled", "w") as f:
+            f.write("1")
+        _pending_reload = True
+        log("USB enabled — rebooting")
+        return Response(request, '{"ok":true}', content_type="application/json")
+    except Exception as e:
+        return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(500, "Internal Server Error"))
+
+@server.route("/usb/disable", "POST")
+def usb_disable(request: Request):
+    global _pending_reload
+    try:
+        os.remove("/usb_enabled")
+    except OSError:
+        pass
+    _pending_reload = True
+    log("USB disabled — rebooting")
+    return Response(request, '{"ok":true}', content_type="application/json")
+
+@server.route("/schema", "GET")
+def serve_schema(request: Request):
+    schema = {
+        "post_url": "/add",
+        "categories": {
+            "news": {
+                "description": "Scrolling news headline",
+                "fields": {
+                    "text": "string (required) — the headline",
+                    "ttl_minutes": "number (optional, default 60)"
+                }
+            },
+            "weather": {
+                "description": "Current weather conditions",
+                "fields": {
+                    "condition": "string (required) — e.g. sunny, rain, snow",
+                    "high": "number (required) — high temp in F",
+                    "low": "number (required) — low temp in F",
+                    "precip": "number (required) — precipitation chance 0-100",
+                    "ttl_minutes": "number (optional, default 120)"
+                }
+            },
+            "stock": {
+                "description": "Stock ticker update",
+                "fields": {
+                    "symbol": "string (required) — ticker symbol e.g. AAPL",
+                    "change": "number (required) — percent change e.g. 2.3 or -1.5",
+                    "ttl_minutes": "number (optional, default 30)"
+                }
+            },
+            "calendar": {
+                "description": "Upcoming calendar event reminder",
+                "fields": {
+                    "time": "string (required) — e.g. 2pm or in 15min",
+                    "text": "string (required) — event title",
+                    "ttl_minutes": "number (optional, default 120)"
+                }
+            },
+            "text": {
+                "description": "Generic plain text message",
+                "fields": {
+                    "text": "string (required) — message to display",
+                    "ttl_minutes": "number (optional, default 60)"
+                }
+            }
+        }
+    }
+    return Response(request, json.dumps(schema), content_type="application/json")
+
+@server.route("/log", "GET")
+def serve_log(request: Request):
+    lines = "\n".join(_log_lines[-100:])
+    html = (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<meta http-equiv='refresh' content='5'>"
+        "<title>MatrixPortal Log</title>"
+        "<style>body{background:#111;color:#0f0;font-family:monospace;font-size:13px;padding:12px;}"
+        "pre{white-space:pre-wrap;word-break:break-all;}</style></head>"
+        "<body><pre>" + lines + "</pre>"
+        "<script>window.scrollTo(0,document.body.scrollHeight);</script>"
+        "</body></html>"
+    )
+    return Response(request, html, content_type="text/html")
 
 @server.route("/", "GET")
 def status(request: Request):
@@ -225,9 +363,9 @@ def status(request: Request):
     return Response(request, body, content_type="application/json")
 
 server.start(str(wifi.radio.ipv4_address), port=8080)
-print(f"Listening at http://matrixportal.local:8080  ({wifi.radio.ipv4_address}:8080)")
+log(f"Listening at http://matrixportal.local:8080  ({wifi.radio.ipv4_address}:8080)")
 if not PIR_ENABLED:
-    print("PIR disabled — display will not sleep (set PIR_ENABLED=True when sensor is connected)")
+    log("PIR disabled — display will not sleep (set PIR_ENABLED=True when sensor is connected)")
 
 # --- Renderers init ---
 
@@ -247,15 +385,20 @@ def greeting_text():
 # --- Main loop ---
 
 clear_display()
-print("Ready")
+log("Ready")
 
 while True:
     server.poll()
 
+    if _pending_reload:
+        log("Reloading...")
+        time.sleep(0.2)
+        supervisor.reload()
+
     if pir_active():
         if asleep:
             slept = int(time.monotonic() - sleep_start) if sleep_start else 0
-            print(f"Motion detected — waking up (slept {slept}s)")
+            log(f"Motion detected — waking up (slept {slept}s)")
             asleep      = False
             sleep_start = None
             notify_openclaw("person_detected")
@@ -269,7 +412,7 @@ while True:
         last_motion_ref[0] = time.monotonic()
 
     if not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
-        print(f"No motion for {SLEEP_TIMEOUT_SECONDS}s — sleeping")
+        log(f"No motion for {SLEEP_TIMEOUT_SECONDS}s — sleeping")
         clear_display()
         asleep         = True
         sleep_start    = time.monotonic()
@@ -278,11 +421,11 @@ while True:
     if asleep:
         now = time.monotonic()
         if now - last_heartbeat >= HEARTBEAT_SECONDS:
-            print(f"Still sleeping... ({int(now - sleep_start)}s)")
+            log(f"Still sleeping... ({int(now - sleep_start)}s)")
             last_heartbeat = now
         if not btn_up.value:
             slept = int(time.monotonic() - sleep_start) if sleep_start else 0
-            print(f"Woken by UP button (slept {slept}s)")
+            log(f"Woken by UP button (slept {slept}s)")
             asleep = False
             sleep_start = None
             last_motion_ref[0] = time.monotonic()
@@ -297,7 +440,7 @@ while True:
         continue
 
     if not btn_down.value:
-        print("DOWN button — sleeping")
+        log("DOWN button — sleeping")
         clear_display()
         asleep         = True
         sleep_start    = time.monotonic()
@@ -315,21 +458,21 @@ while True:
     if message_queue:
         msg = message_queue.pop(0)
         if time.monotonic() >= msg["expires_at"]:
-            print(f"Skipping expired [{msg.get('category','')}]: {_msg_summary(msg)}")
+            log(f"Skipping expired [{msg.get('category','')}]: {_msg_summary(msg)}")
             continue
         current_msg = msg
-        print(f"Displaying [{msg.get('category','')}]: {_msg_summary(msg)}")
+        log(f"Displaying [{msg.get('category','')}]: {_msg_summary(msg)}")
         result = renderers.render(msg)
         current_msg = None
         clear_display()
         if result == "sleep":
-            print("No motion mid-display — sleeping")
+            log("No motion mid-display — sleeping")
             asleep         = True
             sleep_start    = time.monotonic()
             last_heartbeat = time.monotonic()
         elif result == "clear":
             message_queue.clear()
-            print("Queue cleared by button")
+            log("Queue cleared by button")
             time.sleep(0.3)
         elif result == "done":
             if time.monotonic() < msg["expires_at"] and msg.get("id") not in _deleted_ids:
