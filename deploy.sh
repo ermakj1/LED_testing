@@ -34,7 +34,7 @@ deploy_wifi() {
     AUTH=$(echo -n ":$CIRCUITPY_WEB_API_PASSWORD" | base64)
     for f in $FILES; do
         HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X PUT "http://$BOARD_HOST/cp/files/$f" \
+            -X PUT "http://$BOARD_HOST/fs/$f" \
             -H "Authorization: Basic $AUTH" \
             -H "Content-Type: application/octet-stream" \
             --data-binary "@$f")
@@ -48,7 +48,7 @@ deploy_wifi() {
         find lib -type f | while read lf; do
             remote="$lf"
             HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-                -X PUT "http://$BOARD_HOST/cp/files/$remote" \
+                -X PUT "http://$BOARD_HOST/fs/$remote" \
                 -H "Authorization: Basic $AUTH" \
                 -H "Content-Type: application/octet-stream" \
                 --data-binary "@$lf")
