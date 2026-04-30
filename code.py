@@ -36,7 +36,7 @@ PANEL_HEIGHT = 32
 MAX_QUEUE    = 20
 DEFAULT_TTL_MINUTES   = 60
 SLEEP_TIMEOUT_SECONDS = 300   # 5 minutes of no motion → sleep
-PIR_ENABLED           = False # set True when PIR sensor is wired to A1
+PIR_ENABLED           = True  # set False if PIR sensor is not connected
 HEARTBEAT_SECONDS     = 60    # log a heartbeat this often while sleeping
 LOG_MAX_LINES         = 100
 # Buttons: UP wakes from sleep / skips message. DOWN sleeps immediately.
@@ -86,10 +86,11 @@ btn_down.switch_to_input(pull=digitalio.Pull.UP)
 pir = digitalio.DigitalInOut(board.A1)
 pir.switch_to_input()
 
-last_motion_ref = [time.monotonic()]
-asleep          = False
-sleep_start     = None
-last_heartbeat  = None
+last_motion_ref  = [time.monotonic()]
+asleep           = False
+sleep_start      = None
+last_heartbeat   = None
+_last_motion_log = 0   # debounce motion logging
 
 def pir_active():
     return PIR_ENABLED and pir.value
@@ -283,6 +284,24 @@ def usb_enable(request: Request):
     except Exception as e:
         return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(500, "Internal Server Error"))
 
+@server.route("/pir", "GET")
+def pir_status(request: Request):
+    return Response(request, json.dumps({"pir_enabled": PIR_ENABLED}), content_type="application/json")
+
+@server.route("/pir/enable", "POST")
+def pir_enable(request: Request):
+    global PIR_ENABLED
+    PIR_ENABLED = True
+    log("PIR enabled")
+    return Response(request, '{"ok":true}', content_type="application/json")
+
+@server.route("/pir/disable", "POST")
+def pir_disable(request: Request):
+    global PIR_ENABLED
+    PIR_ENABLED = False
+    log("PIR disabled")
+    return Response(request, '{"ok":true}', content_type="application/json")
+
 @server.route("/usb/disable", "POST")
 def usb_disable(request: Request):
     global _pending_reload
@@ -418,7 +437,12 @@ while True:
             elif result == "clear":
                 message_queue.clear()
                 time.sleep(0.3)
-        last_motion_ref[0] = time.monotonic()
+        now = time.monotonic()
+        last_motion_ref[0] = now
+        if now - _last_motion_log >= 10:
+            _last_motion_log = now
+            if not asleep:
+                log("Motion detected")
 
     if PIR_ENABLED and not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
         log(f"No motion for {SLEEP_TIMEOUT_SECONDS}s — sleeping")

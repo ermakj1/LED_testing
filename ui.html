@@ -101,6 +101,15 @@ select:focus,input:focus{outline:none;border-color:#0a84ff}
 <div id="usb-msg" style="font-size:12px;color:#888;margin-top:8px;display:none"></div>
 
 <h3>
+  Motion Detection
+  <span id="pir-status" style="font-size:11px;color:#555">...</span>
+</h3>
+<div style="display:flex;gap:8px">
+  <button class="btn-sm" id="btn-pir-enable" onclick="setPir(true)" style="background:#1a3a1a;color:#4cff6a;flex:1">Enable</button>
+  <button class="btn-sm" id="btn-pir-disable" onclick="setPir(false)" style="background:#3a1010;color:#ff6b6b;flex:1">Disable</button>
+</div>
+
+<h3>
   Queue
   <span style="display:flex;gap:8px">
     <button class="btn-sm btn-refresh" onclick="loadQueue()">Refresh</button>
@@ -223,6 +232,27 @@ async function setUsb(enable){
 }
 
 loadUsb();
+
+async function loadPir(){
+  try{
+    const r=await fetch('/pir');
+    const j=await r.json();
+    const enabled=j.pir_enabled;
+    document.getElementById('pir-status').textContent=enabled?'enabled':'disabled';
+    document.getElementById('pir-status').style.color=enabled?'#4cff6a':'#ff6b6b';
+    document.getElementById('btn-pir-enable').disabled=enabled;
+    document.getElementById('btn-pir-disable').disabled=!enabled;
+  }catch(e){}
+}
+
+async function setPir(enable){
+  try{
+    await fetch(enable?'/pir/enable':'/pir/disable',{method:'POST'});
+    loadPir();
+  }catch(e){}
+}
+
+loadPir();
 </script>
 </body>
 </html>
