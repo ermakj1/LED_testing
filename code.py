@@ -116,7 +116,8 @@ def notify_openclaw(event):
 
 message_queue = []
 _deleted_ids  = set()
-_next_id = 0
+_next_id      = 0
+current_msg   = None  # message currently being rendered
 
 def _new_id():
     global _next_id
@@ -194,10 +195,12 @@ def clear_queue(request: Request):
 @server.route("/", "GET")
 def status(request: Request):
     now = time.monotonic()
+    all_msgs = ([current_msg] if current_msg else []) + message_queue
     queue_out = [
         {k: v for k, v in m.items() if k != "expires_at"} |
-        {"expires_in_minutes": round((m["expires_at"] - now) / 60, 1)}
-        for m in message_queue
+        {"expires_in_minutes": round((m["expires_at"] - now) / 60, 1),
+         "playing": (m is current_msg)}
+        for m in all_msgs
     ]
     body = json.dumps({"count": len(queue_out), "queue": queue_out})
     return Response(request, body, content_type="application/json")
@@ -264,8 +267,10 @@ while True:
         if time.monotonic() >= msg["expires_at"]:
             print(f"Skipping expired: {msg}")
             continue
+        current_msg = msg
         print(f"Rendering [{msg.get('category','')}]")
         result = renderers.render(msg)
+        current_msg = None
         clear_display()
         if result == "sleep":
             print("No motion mid-render — sleeping")
