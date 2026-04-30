@@ -17,7 +17,7 @@ import sys
 import json
 import urllib.request
 
-BOARD_URL = "http://matrixportal.local/add"
+BOARD_URL = "http://matrixportal.local:8080/add"
 
 def post(payload, ttl_minutes=60):
     payload["ttl_minutes"] = ttl_minutes

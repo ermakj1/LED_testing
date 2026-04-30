@@ -224,8 +224,8 @@ def status(request: Request):
     body = json.dumps({"count": len(queue_out), "queue": queue_out})
     return Response(request, body, content_type="application/json")
 
-server.start(str(wifi.radio.ipv4_address), port=80)
-print(f"Listening at http://matrixportal.local  ({wifi.radio.ipv4_address})")
+server.start(str(wifi.radio.ipv4_address), port=8080)
+print(f"Listening at http://matrixportal.local:8080  ({wifi.radio.ipv4_address}:8080)")
 if not PIR_ENABLED:
     print("PIR disabled — display will not sleep (set PIR_ENABLED=True when sensor is connected)")
 
