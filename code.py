@@ -137,11 +137,12 @@ def notify_openclaw(event):
 
 # --- Message queue ---
 
-message_queue  = []
-_deleted_ids   = set()
-_next_id       = 0
-current_msg    = None
+message_queue   = []
+_deleted_ids    = set()
+_next_id        = 0
+current_msg     = None
 _pending_reload = False
+_pending_wake   = False
 
 def _new_id():
     global _next_id
@@ -284,6 +285,13 @@ def usb_enable(request: Request):
     except Exception as e:
         return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(500, "Internal Server Error"))
 
+@server.route("/wake", "POST")
+def wake_display(request: Request):
+    global _pending_wake
+    _pending_wake = True
+    log("Wake requested via web")
+    return Response(request, '{"ok":true}', content_type="application/json")
+
 @server.route("/pir", "GET")
 def pir_status(request: Request):
     return Response(request, json.dumps({"pir_enabled": PIR_ENABLED}), content_type="application/json")
@@ -422,6 +430,15 @@ while True:
         log("Reloading...")
         time.sleep(0.2)
         supervisor.reload()
+
+    if _pending_wake and asleep:
+        _pending_wake = False
+        log("Woken via web")
+        asleep = False
+        sleep_start = None
+        last_motion_ref[0] = time.monotonic()
+    elif _pending_wake:
+        _pending_wake = False
 
     if pir_active():
         if asleep:
