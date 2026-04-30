@@ -295,7 +295,7 @@ def render_generic(msg):
 
 
 def render_news(msg):
-    lbl = label.Label(terminalio.FONT, text="NEWS: " + msg.get("text", ""), color=0xFF2200)
+    lbl = label.Label(terminalio.FONT, text=msg.get("text", ""), color=0xFF2200)
     lbl.y = PANEL_HEIGHT // 2 - 3
     group = displayio.Group()
     group.append(lbl)
