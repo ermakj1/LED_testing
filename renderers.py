@@ -291,12 +291,15 @@ def render_clock():
     group.append(time_grp)
     group.append(date_lbl)
 
-    # Seconds progress bar along the bottom (updates each time clock redraws)
+    # Seconds progress bar along the bottom — dimmed version of clock color
     bar_w = max(1, int(t.tm_sec * PANEL_WIDTH / 60))
-    bar_bm  = displayio.Bitmap(bar_w, 2, 1)
+    bar_bm  = displayio.Bitmap(bar_w, 1, 1)
     bar_pal = displayio.Palette(1)
-    bar_pal[0] = color
-    group.append(displayio.TileGrid(bar_bm, pixel_shader=bar_pal, x=0, y=30))
+    r = ((color >> 16) & 0xFF) >> 3
+    g = ((color >> 8)  & 0xFF) >> 3
+    b = (color         & 0xFF) >> 3
+    bar_pal[0] = (r << 16) | (g << 8) | b
+    group.append(displayio.TileGrid(bar_bm, pixel_shader=bar_pal, x=0, y=31))
 
     _display.root_group = group
 
