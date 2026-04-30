@@ -73,6 +73,66 @@ def _scroll_label(lbl, start_x=None):
     return "done"
 
 
+def _wrap(text, max_chars):
+    """Word-wrap text into lines of at most max_chars."""
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        if not current:
+            current = word
+        elif len(current) + 1 + len(word) <= max_chars:
+            current += " " + word
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _show_text(text, color, bg_color, hold_secs=3):
+    """Show text statically — scale=2 if short, 2-line wrap if medium, scroll if long."""
+    chars_per_line = PANEL_WIDTH // 6  # 10 at scale=1
+
+    if len(text) <= PANEL_WIDTH // 12:
+        # Short enough for scale=2, centered
+        lbl = label.Label(terminalio.FONT, text=text, color=color)
+        lbl.x = 0
+        lbl.y = 0
+        grp = displayio.Group(scale=2)
+        grp.x = (PANEL_WIDTH - len(text) * 12) // 2
+        grp.y = 8
+        grp.append(lbl)
+        outer = displayio.Group()
+        outer.append(_bg(bg_color))
+        outer.append(grp)
+        _display.root_group = outer
+        return _hold(hold_secs)
+
+    lines = _wrap(text, chars_per_line)
+    if len(lines) <= 2:
+        # Fits on 1-2 lines, show static
+        grp = displayio.Group()
+        grp.append(_bg(bg_color))
+        y_positions = [12, 24] if len(lines) == 2 else [16]
+        for line, y in zip(lines, y_positions):
+            lbl = label.Label(terminalio.FONT, text=line, color=color)
+            lbl.x = (PANEL_WIDTH - len(line) * 6) // 2
+            lbl.y = y
+            grp.append(lbl)
+        _display.root_group = grp
+        return _hold(hold_secs)
+
+    # Too long — scroll
+    lbl = label.Label(terminalio.FONT, text=text, color=color)
+    lbl.y = PANEL_HEIGHT // 2 - 3
+    grp = displayio.Group()
+    grp.append(_bg(bg_color))
+    grp.append(lbl)
+    _display.root_group = grp
+    return _scroll_label(lbl)
+
+
 def _hold(seconds):
     """Hold the current display for N seconds. Returns action or 'done'."""
     end = time.monotonic() + seconds
@@ -295,9 +355,9 @@ def render_clock():
     bar_w = max(1, int(t.tm_sec * PANEL_WIDTH / 60))
     bar_bm  = displayio.Bitmap(bar_w, 1, 1)
     bar_pal = displayio.Palette(1)
-    r = ((color >> 16) & 0xFF) >> 3
-    g = ((color >> 8)  & 0xFF) >> 3
-    b = (color         & 0xFF) >> 3
+    r = ((color >> 16) & 0xFF) >> 2
+    g = ((color >> 8)  & 0xFF) >> 2
+    b = (color         & 0xFF) >> 2
     bar_pal[0] = (r << 16) | (g << 8) | b
     group.append(displayio.TileGrid(bar_bm, pixel_shader=bar_pal, x=0, y=31))
 
@@ -401,23 +461,17 @@ def render_stock(msg):
 def render_joke(msg):
     setup    = msg.get("setup", msg.get("text", ""))
     delivery = msg.get("delivery", "")
-    joke_bg  = 0x080A00  # dark green-tinted black
+    joke_bg  = 0x080A00
 
     if setup:
-        lbl = label.Label(terminalio.FONT, text=setup, color=0xFFCC44)
-        lbl.y = PANEL_HEIGHT // 2 - 3
-        grp = displayio.Group()
-        grp.append(_bg(joke_bg))
-        grp.append(lbl)
-        _display.root_group = grp
-        result = _scroll_label(lbl)
+        result = _show_text(setup, 0xFFCC44, joke_bg, hold_secs=3)
         if result and result != "done":
             return result
 
     if not delivery:
         return "done"
 
-    # Animated "..." — dots appear one by one, then hold
+    # Animated "..." — dots appear one by one
     for dots in (".", "..", "..."):
         dot_lbl = label.Label(terminalio.FONT, text=dots, color=0x668833)
         dot_lbl.x = (PANEL_WIDTH - len(dots) * 6) // 2
@@ -430,14 +484,7 @@ def render_joke(msg):
         if result and result != "done":
             return result
 
-    # Punchline
-    lbl = label.Label(terminalio.FONT, text=delivery, color=0xFFFF88)
-    lbl.y = PANEL_HEIGHT // 2 - 3
-    grp = displayio.Group()
-    grp.append(_bg(joke_bg))
-    grp.append(lbl)
-    _display.root_group = grp
-    return _scroll_label(lbl)
+    return _show_text(delivery, 0xFFFF88, joke_bg, hold_secs=4)
 
 
 def render_weather(msg):
