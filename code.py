@@ -166,6 +166,8 @@ def _msg_summary(m):
         setup = m.get("setup", m.get("text", ""))
         delivery = m.get("delivery", "")
         return (setup[:30] + " / " + delivery[:20]) if delivery else setup[:50]
+    if cat == "animation":
+        return f"{m.get('type','fireworks')} {m.get('duration',10)}s"
     return str(m.get("text", m.get("condition", "")))[:50]
 
 def purge_expired():
@@ -381,6 +383,13 @@ def serve_schema(request: Request):
                     "delivery": "string (optional) — punchline",
                     "text": "string — single-line joke (alternative to setup/delivery)",
                     "ttl_minutes": "number (optional, default 60)"
+                }
+            },
+            "animation": {
+                "description": "Full-panel decorative animation",
+                "fields": {
+                    "type": "string — fireworks | rainbow | dvd (default: fireworks)",
+                    "duration": "number (optional) — seconds to run (default 10)"
                 }
             }
         }

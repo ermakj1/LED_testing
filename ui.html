@@ -100,9 +100,6 @@ select:focus,input:focus{outline:none;border-color:#0a84ff}
 </div>
 <div id="usb-msg" style="font-size:12px;color:#888;margin-top:8px;display:none"></div>
 
-<h3>Display</h3>
-<button class="btn-sm" onclick="wake()" style="background:#1a2a3a;color:#66aaff;width:100%">Wake Screen</button>
-
 <h3>
   Motion Detection
   <span id="pir-status" style="font-size:11px;color:#555">...</span>
@@ -111,6 +108,19 @@ select:focus,input:focus{outline:none;border-color:#0a84ff}
   <button class="btn-sm" id="btn-pir-enable" onclick="setPir(true)" style="background:#1a3a1a;color:#4cff6a;flex:1">Enable</button>
   <button class="btn-sm" id="btn-pir-disable" onclick="setPir(false)" style="background:#3a1010;color:#ff6b6b;flex:1">Disable</button>
 </div>
+
+<h3>Display</h3>
+<button class="btn-sm" onclick="wake()" style="background:#1a2a3a;color:#66aaff;width:100%">Wake Screen</button>
+
+<h3>Animations</h3>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+  <button class="btn-sm" onclick="anim('fireworks')" style="background:#1a1a00;color:#ffee44;flex:1">Fireworks</button>
+  <button class="btn-sm" onclick="anim('rainbow')"   style="background:#1a001a;color:#ee44ff;flex:1">Rainbow</button>
+  <button class="btn-sm" onclick="anim('dvd')"       style="background:#001a1a;color:#44eeff;flex:1">DVD Box</button>
+  <button class="btn-sm" onclick="anim('dvd_text')"  style="background:#001a1a;color:#88ddff;flex:1">DVD Text</button>
+  <button class="btn-sm" onclick="anim('matrix')"    style="background:#001400;color:#00ff44;flex:1">Matrix</button>
+</div>
+<div id="anim-msg" style="font-size:12px;color:#888;margin-top:8px;display:none"></div>
 
 <h3>
   Queue
@@ -259,6 +269,23 @@ loadPir();
 
 async function wake(){
   try{ await fetch('/wake',{method:'POST'}); }catch(e){}
+}
+
+async function anim(type){
+  const animMsg=document.getElementById('anim-msg');
+  animMsg.style.display='block';
+  animMsg.textContent='Queued '+type+'...';
+  try{
+    const r=await fetch('/add',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({category:'animation',type,duration:10,ttl_minutes:1,max_plays:1})});
+    const j=await r.json();
+    animMsg.textContent=j.ok?type+' queued':'Error: '+j.reason;
+    animMsg.style.color=j.ok?'#4cff6a':'#ff6b6b';
+    if(j.ok)loadQueue();
+  }catch(e){
+    animMsg.textContent='Could not reach display';
+    animMsg.style.color='#ff6b6b';
+  }
 }
 </script>
 </body>

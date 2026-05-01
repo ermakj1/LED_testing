@@ -5,6 +5,7 @@
 
 import time
 import random
+import math
 import displayio
 import terminalio
 from adafruit_display_text import label
@@ -320,11 +321,12 @@ def _condition_to_icon(condition):
 def render(msg):
     """Dispatch to the right renderer based on category."""
     category = msg.get("category", "")
-    if category == "weather":  return render_weather(msg)
-    if category == "stock":    return render_stock(msg)
-    if category == "news":     return render_news(msg)
-    if category == "calendar": return render_calendar(msg)
-    if category == "joke":     return render_joke(msg)
+    if category == "weather":   return render_weather(msg)
+    if category == "stock":     return render_stock(msg)
+    if category == "news":      return render_news(msg)
+    if category == "calendar":  return render_calendar(msg)
+    if category == "joke":      return render_joke(msg)
+    if category == "animation": return render_animation(msg)
     return render_generic(msg)
 
 
@@ -548,3 +550,305 @@ def render_weather(msg):
         frame += 1
         time.sleep(0.05)
     return "done"
+
+
+# ---------------------------------------------------------------------------
+# Animation renderers
+# ---------------------------------------------------------------------------
+
+_ANIM_COLORS = [
+    0xFF2200, 0xFF8800, 0xFFEE00, 0x00FF44,
+    0x00AAFF, 0x8800FF, 0xFF00CC, 0xFFFFFF,
+]
+
+def _hsv_to_rgb(h, s, v):
+    """h/s/v each 0.0–1.0 → packed 24-bit RGB int."""
+    if s == 0:
+        c = int(v * 255)
+        return (c << 16) | (c << 8) | c
+    h6 = h * 6.0
+    i  = int(h6) % 6
+    f  = h6 - int(h6)
+    p  = v * (1 - s)
+    q  = v * (1 - s * f)
+    t  = v * (1 - s * (1 - f))
+    if   i == 0: r, g, b = v, t, p
+    elif i == 1: r, g, b = q, v, p
+    elif i == 2: r, g, b = p, v, t
+    elif i == 3: r, g, b = p, q, v
+    elif i == 4: r, g, b = t, p, v
+    else:        r, g, b = v, p, q
+    return (int(r * 255) << 16) | (int(g * 255) << 8) | int(b * 255)
+
+
+def _anim_fireworks(duration):
+    """Colored particle bursts from random launch points."""
+    N = len(_ANIM_COLORS)
+    bm  = displayio.Bitmap(PANEL_WIDTH, PANEL_HEIGHT, N + 1)
+    pal = displayio.Palette(N + 1)
+    pal.make_transparent(0)
+    for i, c in enumerate(_ANIM_COLORS):
+        pal[i + 1] = c
+
+    bg_bm  = displayio.Bitmap(PANEL_WIDTH, PANEL_HEIGHT, 1)
+    bg_pal = displayio.Palette(1)
+    bg_pal[0] = 0x000000
+    grp = displayio.Group()
+    grp.append(displayio.TileGrid(bg_bm, pixel_shader=bg_pal))
+    grp.append(displayio.TileGrid(bm,    pixel_shader=pal))
+    _display.root_group = grp
+
+    # Each particle: [x, y, dx, dy, life, color_idx]
+    particles = []
+
+    end        = time.monotonic() + duration
+    frame      = 0
+    next_burst = 0
+
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+
+        bm.fill(0)
+
+        if frame >= next_burst:
+            cx = random.randint(10, PANEL_WIDTH  - 10)
+            cy = random.randint(8,  PANEL_HEIGHT - 8)
+            ci = random.randint(1, N)
+            for _ in range(14):
+                angle = random.uniform(0, 6.283)
+                speed = random.uniform(0.4, 1.3)
+                dx    = speed * math.cos(angle)
+                dy    = speed * math.sin(angle) * 0.55  # squash vertically
+                particles.append([float(cx), float(cy), dx, dy,
+                                   random.randint(7, 14), ci])
+            next_burst = frame + 22 + random.randint(0, 12)
+
+        i = 0
+        while i < len(particles):
+            p = particles[i]
+            p[0] += p[2]
+            p[1] += p[3]
+            p[4] -= 1
+            ix, iy = int(p[0]), int(p[1])
+            if p[4] <= 0 or not (0 <= ix < PANEL_WIDTH and 0 <= iy < PANEL_HEIGHT):
+                particles.pop(i)
+            else:
+                bm[ix, iy] = p[5]
+                i += 1
+
+        frame += 1
+        time.sleep(0.05)
+
+    return "done"
+
+
+def _anim_rainbow_pulse(duration):
+    """Full-panel rainbow that shifts hue over time with a brightness wave."""
+    N = 32  # palette slots, 2 columns each
+    bm  = displayio.Bitmap(PANEL_WIDTH, PANEL_HEIGHT, N)
+    pal = displayio.Palette(N)
+    tile = displayio.TileGrid(bm, pixel_shader=pal)
+    grp  = displayio.Group()
+    grp.append(tile)
+    _display.root_group = grp
+
+    # Map each column to a palette index (static)
+    for y in range(PANEL_HEIGHT):
+        for x in range(PANEL_WIDTH):
+            bm[x, y] = (x * N) // PANEL_WIDTH
+
+    end   = time.monotonic() + duration
+    frame = 0
+
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+
+        hue_offset = (frame * 0.018) % 1.0
+        for i in range(N):
+            hue        = (hue_offset + i / N) % 1.0
+            brightness = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(frame * 0.12 + i * 0.4))
+            pal[i]     = _hsv_to_rgb(hue, 1.0, brightness)
+
+        frame += 1
+        time.sleep(0.05)
+
+    return "done"
+
+
+def _bounce_step(x, y, dx, dy, w, h):
+    """Advance one bounce frame. Returns (x, y, dx, dy, hit)."""
+    x += dx
+    y += dy
+    hit = False
+    if x < 0:
+        x = 0.0; dx = abs(dx); hit = True
+    elif x + w > PANEL_WIDTH:
+        x = float(PANEL_WIDTH - w); dx = -abs(dx); hit = True
+    if y < 0:
+        y = 0.0; dy = abs(dy); hit = True
+    elif y + h > PANEL_HEIGHT:
+        y = float(PANEL_HEIGHT - h); dy = -abs(dy); hit = True
+    return x, y, dx, dy, hit
+
+
+def _anim_dvd_bounce(duration):
+    """Classic bouncing rectangle; changes color on each wall hit."""
+    RW, RH = 14, 7
+    x, y   = float(PANEL_WIDTH // 3), float(PANEL_HEIGHT // 3)
+    dx, dy = 1.1, 0.75
+    ci     = 0
+
+    bm  = displayio.Bitmap(PANEL_WIDTH, PANEL_HEIGHT, 2)
+    pal = displayio.Palette(2)
+    pal[0] = 0x000000
+    pal[1] = _ANIM_COLORS[ci]
+    grp = displayio.Group()
+    grp.append(displayio.TileGrid(bm, pixel_shader=pal))
+    _display.root_group = grp
+
+    end = time.monotonic() + duration
+
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+
+        bm.fill(0)
+        ix, iy = int(x), int(y)
+        for ry in range(RH):
+            for rx in range(RW):
+                px, py = ix + rx, iy + ry
+                if 0 <= px < PANEL_WIDTH and 0 <= py < PANEL_HEIGHT:
+                    bm[px, py] = 1
+
+        x, y, dx, dy, hit = _bounce_step(x, y, dx, dy, RW, RH)
+        if hit:
+            ci     = (ci + 1) % len(_ANIM_COLORS)
+            pal[1] = _ANIM_COLORS[ci]
+
+        time.sleep(0.05)
+
+    return "done"
+
+
+def _anim_dvd_text(duration):
+    """'DVD' text bouncing around the panel, changing color on wall hits."""
+    ci  = 0
+    lbl = label.Label(terminalio.FONT, text="DVD", color=_ANIM_COLORS[ci])
+    lbl.x = 0
+    lbl.y = 0
+
+    bg_bm  = displayio.Bitmap(PANEL_WIDTH, PANEL_HEIGHT, 1)
+    bg_pal = displayio.Palette(1)
+    bg_pal[0] = 0x000000
+    grp = displayio.Group()
+    grp.append(displayio.TileGrid(bg_bm, pixel_shader=bg_pal))
+    grp.append(lbl)
+    _display.root_group = grp
+
+    # Measure text after it's been placed on display
+    bb = lbl.bounding_box   # (x_off, y_off, width, height)
+    TW = bb[2]
+    TH = bb[3]
+
+    x, y   = float(PANEL_WIDTH // 3), float(PANEL_HEIGHT // 3)
+    dx, dy = 1.1, 0.75
+
+    end = time.monotonic() + duration
+
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+
+        lbl.x = int(x)
+        lbl.y = int(y) + TH // 2  # label y is vertical center anchor
+
+        x, y, dx, dy, hit = _bounce_step(x, y, dx, dy, TW, TH)
+        if hit:
+            ci        = (ci + 1) % len(_ANIM_COLORS)
+            lbl.color = _ANIM_COLORS[ci]
+
+        time.sleep(0.05)
+
+    return "done"
+
+
+def _anim_matrix_rain(duration):
+    """Green falling pixel streams — classic Matrix screensaver."""
+    # 8-entry palette: black + 6 green shades + near-white head
+    bm  = displayio.Bitmap(PANEL_WIDTH, PANEL_HEIGHT, 8)
+    pal = displayio.Palette(8)
+    pal[0] = 0x000000  # black
+    pal[1] = 0x001400  # barely visible
+    pal[2] = 0x002C00  # very dim
+    pal[3] = 0x005200  # dim
+    pal[4] = 0x009900  # medium
+    pal[5] = 0x00DD00  # bright
+    pal[6] = 0x00FF44  # full green
+    pal[7] = 0xCCFFCC  # near-white head
+
+    grp = displayio.Group()
+    grp.append(displayio.TileGrid(bm, pixel_shader=pal))
+    _display.root_group = grp
+    bm.fill(0)
+
+    # 16 columns, each 3px wide with 1px gap
+    COL_W  = 4
+    N_COLS = PANEL_WIDTH // COL_W  # 16
+
+    # streams: [x, y_head (float), speed, trail_len]
+    streams = [
+        [i * COL_W,
+         float(-random.randint(2, PANEL_HEIGHT + 6)),
+         random.uniform(0.35, 0.95),
+         random.randint(6, 20)]
+        for i in range(N_COLS)
+    ]
+
+    # Trail index → palette index
+    _TRAIL = [7, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 1, 1, 1, 1, 1, 1]
+
+    end = time.monotonic() + duration
+
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+
+        bm.fill(0)
+
+        for s in streams:
+            x, y, speed, trail = s
+            hy = int(y)
+            for t in range(trail):
+                ty = hy - t
+                if 0 <= ty < PANEL_HEIGHT:
+                    ci = _TRAIL[t] if t < len(_TRAIL) else 1
+                    for dx in range(COL_W - 1):  # 1px gap between columns
+                        if x + dx < PANEL_WIDTH:
+                            bm[x + dx, ty] = ci
+            s[1] += speed
+            if int(s[1]) - trail > PANEL_HEIGHT:
+                s[1] = float(-random.randint(2, 10))
+                s[2] = random.uniform(0.35, 0.95)
+                s[3] = random.randint(6, 20)
+
+        time.sleep(0.05)
+
+    return "done"
+
+
+def render_animation(msg):
+    """Dispatch to an animation by type field. Default duration 10s."""
+    anim     = msg.get("type", "fireworks")
+    duration = float(msg.get("duration", 10))
+    if anim == "rainbow":   return _anim_rainbow_pulse(duration)
+    if anim == "dvd":       return _anim_dvd_bounce(duration)
+    if anim == "dvd_text":  return _anim_dvd_text(duration)
+    if anim == "matrix":    return _anim_matrix_rain(duration)
+    return _anim_fireworks(duration)

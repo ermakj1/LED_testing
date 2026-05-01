@@ -21,6 +21,20 @@ Things we might build later. Not prioritized.
 - **AM/PM indicator** — small colored dot on the clock instead of text
 - **Weekday vs weekend clock color** — different palette on weekends
 
+## Animation ideas
+
+Built: fireworks, rainbow pulse, DVD bounce
+
+More to add later:
+- **Matrix rain** — green falling characters, classic screensaver
+- **Fire** — orange/red flame simulation rising from the bottom
+- **Starfield** — white dots flying toward viewer (warp speed)
+- **Plasma** — colorful interference pattern of overlapping sine waves
+- **Snake** — simple snake game playing itself (auto-pilot)
+- **Confetti** — multicolor squares falling and tumbling
+- **Lava lamp** — slow blobs of color rising and merging
+- **Pac-Man chase** — tiny Pac-Man being chased across the panel
+
 ## Integration ideas
 
 - **Google Home** — trigger routines on person detected via IFTTT webhooks or Home Assistant
