@@ -367,6 +367,14 @@ def render_clock():
     bar_pal[0] = (r << 16) | (g << 8) | b
     group.append(displayio.TileGrid(bar_bm, pixel_shader=bar_pal, x=0, y=31))
 
+    # Motion indicator — top-right pixel, red for 2s after last detection
+    dot_bm  = displayio.Bitmap(1, 1, 1)
+    dot_bm[0, 0] = 0
+    dot_pal = displayio.Palette(1)
+    dot_pal[0] = 0x000000
+    group.append(displayio.TileGrid(dot_bm, pixel_shader=dot_pal,
+                                    x=PANEL_WIDTH - 1, y=0))
+
     _display.root_group = group
 
     end = time.monotonic() + 1
@@ -374,6 +382,7 @@ def render_clock():
         action = _poll()
         if action:
             return action
+        dot_pal[0] = 0xFF0000 if time.monotonic() - _last_motion_ref[0] < 2.0 else 0x000000
         time.sleep(0.05)
     return "done"
 
