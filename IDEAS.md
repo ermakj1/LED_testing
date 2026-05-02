@@ -10,6 +10,7 @@ Things we might build later. Not prioritized.
 - **Word of the day** — one interesting word scrolling in the morning
 - **Package tracking** — "UPS out for delivery" type alerts
 - **Calendar feed** — pull from Google Calendar automatically instead of manual entry
+- **Interesting fact about today** — on this day in history, fetched from a free API (e.g. Wikipedia "On This Day") and scrolled in the morning
 - **Crypto prices** — same pattern as stock feed
 - **Home alerts** — doorbell, garage door, etc. triggered by Home Assistant
 
