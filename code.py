@@ -83,7 +83,7 @@ btn_down.switch_to_input(pull=digitalio.Pull.UP)
 
 # --- PIR ---
 
-pir = digitalio.DigitalInOut(board.A1)
+pir = digitalio.DigitalInOut(board.A3)
 pir.switch_to_input()
 
 last_motion_ref  = [time.monotonic()]

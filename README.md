@@ -16,7 +16,7 @@ A CircuitPython-powered RGB LED matrix display with a WiFi API, animated message
 |---------|----------------|
 | VIN     | 3 (3.3V)        |
 | GND     | GND             |
-| OUT     | A1              |
+| OUT     | A3              |
 
 ## Software
 
