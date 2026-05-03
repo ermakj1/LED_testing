@@ -461,6 +461,7 @@ def main_menu(cfg):
         print("  [5] Board URL")
         print("  [s] Status")
         print("  [r] Restart all feeds")
+        print("  [c] Clear board queue")
         print("  [q] Quit  (feeds keep running)")
 
         cmd = ask()
@@ -480,6 +481,20 @@ def main_menu(cfg):
             restart_all()
             print("  Restarting all feeds...")
             time.sleep(1)
+        elif cmd == "c":
+            try:
+                board_url = cfg.get("board_url", "")
+                req = urllib.request.Request(
+                    f"{board_url}/clear", data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    json.loads(r.read())
+                print("  Queue cleared.")
+            except Exception as e:
+                print(f"  Failed: {e}")
+            pause()
         elif cmd in ("q", ""):
             break
 
