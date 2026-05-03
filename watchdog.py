@@ -30,7 +30,7 @@ FEEDS = [
     ("animations", [sys.executable, "feeds/animations.py"]),
 ]
 
-DEFAULT_GIT_INTERVAL = 120   # seconds between git fetch checks
+DEFAULT_GIT_INTERVAL = 900   # seconds between git fetch checks (15 min)
 RESTART_DELAY        = 5     # seconds to wait before restarting a crashed feed
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -45,23 +45,23 @@ log = logging.getLogger("watchdog")
 # ── Git helpers ───────────────────────────────────────────────────────────────
 
 def git(*args):
-    """Run a git command in REPO_DIR. Returns (returncode, stdout)."""
+    """Run a git command in REPO_DIR. Returns (returncode, stdout, stderr)."""
     result = subprocess.run(
         ["git"] + list(args),
         cwd=REPO_DIR,
         capture_output=True,
         text=True,
     )
-    return result.returncode, result.stdout.strip()
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
 def has_updates():
     """Fetch from origin, return True if remote has commits we don't have."""
-    rc, _ = git("fetch")
+    rc, _, err = git("fetch")
     if rc != 0:
-        log.warning("git fetch failed — skipping update check")
+        log.warning(f"git fetch failed — {err or 'no error detail'}")
         return False
-    rc, output = git("rev-list", "HEAD..@{u}", "--count")
+    rc, output, _ = git("rev-list", "HEAD..@{u}", "--count")
     if rc != 0:
         return False
     try:
@@ -72,11 +72,11 @@ def has_updates():
 
 def pull():
     """Pull latest changes. Returns True on success."""
-    rc, out = git("pull", "--ff-only")
+    rc, out, err = git("pull", "--ff-only")
     if rc == 0:
         log.info(f"git pull: {out}")
         return True
-    log.error(f"git pull failed: {out}")
+    log.error(f"git pull failed: {out or err}")
     return False
 
 # ── Process management ────────────────────────────────────────────────────────
