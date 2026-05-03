@@ -123,5 +123,5 @@ All feed scripts support `--once` to send a single update and exit, and `--inter
 
 - **Clock** shown when queue is empty. Color shifts with time of day (orange at dawn, white during day, amber at dusk, blue at night). Seconds shown as a progress bar along the bottom. Top-right pixel turns red for 2s on motion detection.
 - **Sleep** triggered by PIR inactivity timeout (5 min). UP button wakes, DOWN button sleeps. Can also be controlled from the web UI.
-- **WiFi power saving** — WiFi shuts off after 60 min of sleep. Reconnects automatically on wake (PIR or UP button). Openclaw receives `wifi_off` / `person_detected` events.
+- **Person detected** — display_agent receives a `person_detected` callback when the board wakes via PIR or UP button.
 - **USB drive** disabled by default (enables WiFi deploy). Use the web UI to re-enable USB when you need to update libraries.

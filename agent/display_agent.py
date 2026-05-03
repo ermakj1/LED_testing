@@ -99,7 +99,6 @@ def log(msg):
 # State
 # ---------------------------------------------------------------------------
 
-_wifi_online    = True
 _last_sent      = {}        # content_type → time.monotonic()
 _onthisday_date = None      # date on which on-this-day was last sent
 _retry_queue    = []
@@ -380,21 +379,9 @@ def run_schedule():
 # ---------------------------------------------------------------------------
 
 def handle_event(event):
-    global _wifi_online
     log(f"Board event: {event}")
 
-    if event == "wifi_off":
-        _wifi_online = False
-
-    elif event == "person_detected":
-        was_offline  = not _wifi_online
-        _wifi_online = True
-
-        if was_offline:
-            log("WiFi back — flushing retry queue and re-registering")
-            board_register()
-            flush_retry()
-
+    if event == "person_detected":
         # If queue is empty, generate something to greet the arrival
         count = board_queue_count()
         if count == 0:

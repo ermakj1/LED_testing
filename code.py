@@ -38,7 +38,6 @@ DEFAULT_TTL_MINUTES   = 60
 SLEEP_TIMEOUT_SECONDS = 300   # 5 minutes of no motion → sleep
 PIR_ENABLED           = True  # set False if PIR sensor is not connected
 HEARTBEAT_SECONDS     = 60    # log a heartbeat this often while sleeping
-WIFI_OFF_MINUTES      = 60    # cut WiFi after this many minutes asleep
 LOG_MAX_LINES         = 100
 # Buttons: UP wakes from sleep / skips message. DOWN sleeps immediately.
 
@@ -93,7 +92,6 @@ sleep_start          = None
 last_heartbeat       = None
 _heartbeat_interval  = HEARTBEAT_SECONDS  # doubles each log, resets on wake
 _last_motion_log     = 0   # debounce motion logging
-_wifi_off            = False
 
 def pir_active():
     return PIR_ENABLED and pir.value
@@ -137,21 +135,6 @@ def notify_openclaw(event):
         _requests.post(callback_url, json={"event": event})
     except Exception as e:
         log(f"notify_openclaw failed: {e}")
-
-def wifi_reconnect():
-    global _wifi_off
-    log("Reconnecting WiFi...")
-    try:
-        wifi.radio.enabled = True
-        wifi.radio.connect(
-            os.getenv("CIRCUITPY_WIFI_SSID"),
-            os.getenv("CIRCUITPY_WIFI_PASSWORD"),
-        )
-        server.start(str(wifi.radio.ipv4_address), port=8080)
-        log(f"WiFi reconnected: {wifi.radio.ipv4_address}")
-    except Exception as e:
-        log(f"WiFi reconnect failed: {e}")
-    _wifi_off = False
 
 # --- Message queue ---
 
@@ -493,8 +476,6 @@ while True:
             notify_openclaw("person_detected")
             result = renderers.render_greeting(greeting_text())
             clear_display()
-            if _wifi_off:
-                wifi_reconnect()
             if result == "sleep":
                 asleep = True
             elif result == "clear":
@@ -521,14 +502,6 @@ while True:
             log(f"Still sleeping... ({int(now - sleep_start)}s)")
             last_heartbeat      = now
             _heartbeat_interval = min(_heartbeat_interval * 2, 3600)
-        if not _wifi_off and sleep_start and now - sleep_start > WIFI_OFF_MINUTES * 60:
-            log(f"Asleep >{WIFI_OFF_MINUTES}min — turning off WiFi")
-            notify_openclaw("wifi_off")
-            try:
-                wifi.radio.enabled = False
-            except Exception as e:
-                log(f"WiFi disable failed: {e}")
-            _wifi_off = True
         if not btn_up.value:
             slept = int(time.monotonic() - sleep_start) if sleep_start else 0
             log(f"Woken by UP button (slept {slept}s)")
@@ -538,13 +511,10 @@ while True:
             notify_openclaw("person_detected")
             result = renderers.render_greeting(greeting_text())
             clear_display()
-            if _wifi_off:
-                wifi_reconnect()
             if result == "clear":
                 message_queue.clear()
             time.sleep(0.3)
-        if not _wifi_off:
-            server.poll()
+        server.poll()
         time.sleep(0.1)
         continue
 
