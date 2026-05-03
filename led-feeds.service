@@ -1,0 +1,16 @@
+[Unit]
+Description=LED Display Feed Manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=REPO_PATH
+ExecStart=/usr/bin/python3 REPO_PATH/watchdog.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
