@@ -910,6 +910,10 @@ def _anim_fire(duration):
     grp.append(displayio.TileGrid(bm, pixel_shader=pal))
     _display.root_group = grp
 
+    # Pre-compute wrap-around column indices to avoid modulo in hot loop
+    xm = [(x - 1) % FW for x in range(FW)]
+    xp = [(x + 1) % FW for x in range(FW)]
+
     heat = [0] * (FW * FH)
     end  = time.monotonic() + duration
 
@@ -919,20 +923,21 @@ def _anim_fire(duration):
             return action
 
         # Seed bottom two rows
+        bot1 = (FH - 1) * FW
+        bot2 = (FH - 2) * FW
         for x in range(FW):
-            heat[(FH - 1) * FW + x] = random.randint(N // 2, N - 1)
-            heat[(FH - 2) * FW + x] = random.randint(N // 2, N - 1)
+            heat[bot1 + x] = (N // 2) + (random.getrandbits(4) % (N // 2))
+            heat[bot2 + x] = (N // 2) + (random.getrandbits(4) % (N // 2))
 
-        # Diffuse upward
+        # Diffuse upward — runs at hardware speed, no sleep
         for y in range(FH - 3, -1, -1):
-            row1 = (y + 1) * FW
-            row2 = (y + 2) * FW
+            row  = y * FW
+            row1 = row + FW
+            row2 = row1 + FW
             for x in range(FW):
-                avg = (heat[row1 + x] +
-                       heat[row2 + x] +
-                       heat[row1 + (x - 1) % FW] +
-                       heat[row1 + (x + 1) % FW]) >> 2
-                heat[y * FW + x] = max(0, avg - random.randint(0, 1))
+                avg = (heat[row1 + x] + heat[row2 + x] +
+                       heat[row1 + xm[x]] + heat[row1 + xp[x]]) >> 2
+                heat[row + x] = avg - random.getrandbits(1)  if avg > 0 else 0
 
         # Draw
         for y in range(FH):
@@ -940,14 +945,18 @@ def _anim_fire(duration):
             for x in range(FW):
                 bm[x, y] = heat[row + x]
 
-        time.sleep(0.05)
-
     return "done"
 
 
 def _anim_game_of_life(duration):
     """Conway's Game of Life with color cycling and auto-randomize on stagnation."""
     W, H = PANEL_WIDTH, PANEL_HEIGHT
+
+    # Pre-compute wrap-around lookup tables — eliminates modulo from hot loop
+    xm = [(x - 1) % W for x in range(W)]
+    xp = [(x + 1) % W for x in range(W)]
+    ym = [(y - 1) % H for y in range(H)]
+    yp = [(y + 1) % H for y in range(H)]
 
     def randomize():
         return [1 if random.random() < 0.35 else 0 for _ in range(W * H)]
@@ -976,15 +985,17 @@ def _anim_game_of_life(duration):
 
         pop = 0
         for y in range(H):
-            ym1 = (y - 1) % H
-            yp1 = (y + 1) % H
+            rowm = ym[y] * W
+            row  = y     * W
+            rowp = yp[y] * W
             for x in range(W):
-                n = (current[ym1 * W + (x-1) % W] + current[ym1 * W + x] + current[ym1 * W + (x+1) % W] +
-                     current[y   * W + (x-1) % W]                         + current[y   * W + (x+1) % W] +
-                     current[yp1 * W + (x-1) % W] + current[yp1 * W + x] + current[yp1 * W + (x+1) % W])
-                c     = current[y * W + x]
-                alive = 1 if (c and n in (2, 3)) or (not c and n == 3) else 0
-                nxt[y * W + x] = alive
+                xm1 = xm[x]; xp1 = xp[x]
+                n = (current[rowm + xm1] + current[rowm + x] + current[rowm + xp1] +
+                     current[row  + xm1]                     + current[row  + xp1] +
+                     current[rowp + xm1] + current[rowp + x] + current[rowp + xp1])
+                c = current[row + x]
+                alive = 1 if n == 3 or (c and n == 2) else 0
+                nxt[row + x] = alive
                 pop += alive
                 bm[x, y] = alive
 
@@ -1001,7 +1012,7 @@ def _anim_game_of_life(duration):
             current  = randomize()
             stagnant = 0
 
-        time.sleep(0.1)
+        # No sleep — runs at hardware speed; GoL is compute-bound anyway
 
     return "done"
 
