@@ -30,12 +30,14 @@ DEFAULT_CONFIG = {
     "board_url": "http://matrixportal.local:8080",
     "weather": {
         "interval_minutes": 30,
+        "enabled": True,
         "cities": [
             {"name": "Kirkland, WA, United States", "lat": 47.6815, "lon": -122.2087, "timezone": "America/Los_Angeles"}
         ]
     },
     "stock": {
         "interval_minutes": 5,
+        "enabled": True,
         "market_hours_only": True,
         "symbols": ["MSFT"]
     },
@@ -204,20 +206,26 @@ def menu_weather(cfg):
     while True:
         wcfg     = cfg.setdefault("weather", {})
         cities   = wcfg.setdefault("cities", [])
+        enabled  = wcfg.get("enabled", True)
         interval = wcfg.get("interval_minutes", 30)
 
         header("Weather Settings")
+        print(f"  Status:   {'enabled' if enabled else 'disabled'}")
         if cities:
             for i, c in enumerate(cities, 1):
                 print(f"  {i}. {c['name']}")
         else:
             print("  (no cities configured)")
         print(f"\n  Interval: every {interval} min")
-        print("\n  [a] Add city   [r] Remove city   [i] Set interval   [b] Back")
+        print("\n  [t] Toggle   [a] Add city   [r] Remove city   [i] Set interval   [b] Back")
 
         cmd = ask()
         if cmd in ("b", "q", ""):
             break
+        elif cmd == "t":
+            wcfg["enabled"] = not enabled
+            save_config(cfg)
+            restart_feed("weather")
         elif cmd == "a":
             name = ask("City name (e.g. Seattle or Tokyo)")
             if not name:
@@ -264,10 +272,12 @@ def menu_stock(cfg):
     while True:
         scfg     = cfg.setdefault("stock", {})
         symbols  = scfg.setdefault("symbols", [])
+        enabled  = scfg.get("enabled", True)
         interval = scfg.get("interval_minutes", 5)
         mkt_only = scfg.get("market_hours_only", True)
 
         header("Stock Settings")
+        print(f"  Status:       {'enabled' if enabled else 'disabled'}")
         if symbols:
             for i, s in enumerate(symbols, 1):
                 print(f"  {i}. {s}")
@@ -275,11 +285,15 @@ def menu_stock(cfg):
             print("  (no symbols configured)")
         print(f"\n  Interval:     every {interval} min")
         print(f"  Market hours: {'9am–5pm only' if mkt_only else 'always on'}")
-        print("\n  [a] Add symbol   [r] Remove symbol   [i] Set interval   [m] Toggle market hours   [b] Back")
+        print("\n  [t] Toggle   [a] Add symbol   [r] Remove symbol   [i] Set interval   [m] Toggle market hours   [b] Back")
 
         cmd = ask()
         if cmd in ("b", "q", ""):
             break
+        elif cmd == "t":
+            scfg["enabled"] = not enabled
+            save_config(cfg)
+            restart_feed("stock")
         elif cmd == "a":
             sym = ask("Symbol (e.g. AAPL)").upper()
             if sym and sym not in symbols:
@@ -422,14 +436,22 @@ def main_menu(cfg):
         hr()
 
         with _proc_lock:
-            statuses = {
-                p.name: "running" if (p.proc and p.proc.poll() is None) else "stopped"
+            running = {
+                p.name: (p.proc and p.proc.poll() is None)
                 for p in _processes
             }
 
-        for name, st in statuses.items():
-            mark = "✓" if st == "running" else "✗"
-            print(f"  {mark} {name}")
+        feed_cfg = {
+            "weather":    cfg.get("weather",    {}).get("enabled", True),
+            "stock":      cfg.get("stock",      {}).get("enabled", True),
+            "jokes":      cfg.get("jokes",      {}).get("enabled", True),
+            "animations": cfg.get("animations", {}).get("enabled", True),
+        }
+
+        for name in ["weather", "stock", "jokes", "animations"]:
+            proc_mark = "✓" if running.get(name) else "✗"
+            en_label  = "" if feed_cfg[name] else "  (disabled)"
+            print(f"  {proc_mark} {name}{en_label}")
 
         print()
         print("  [1] Weather settings")

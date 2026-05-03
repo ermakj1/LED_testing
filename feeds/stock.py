@@ -37,6 +37,9 @@ def get_interval():
 def get_market_hours_only():
     return load_config().get("stock", {}).get("market_hours_only", True)
 
+def is_enabled():
+    return load_config().get("stock", {}).get("enabled", True)
+
 def fetch_quote(symbol):
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=2d"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -99,7 +102,10 @@ def main():
 
     while True:
         interval = args.interval or get_interval()
-        send_all(ttl_minutes=interval)
+        if is_enabled():
+            send_all(ttl_minutes=interval)
+        else:
+            print("Stock disabled — sleeping")
         if args.once:
             break
         time.sleep(interval * 60)

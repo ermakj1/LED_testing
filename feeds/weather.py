@@ -38,6 +38,9 @@ def get_cities():
 def get_interval():
     return load_config().get("weather", {}).get("interval_minutes", 30)
 
+def is_enabled():
+    return load_config().get("weather", {}).get("enabled", True)
+
 def wmo_to_condition(code):
     if code in (0, 1, 2):              return "sunny"
     if code == 3:                      return "cloudy"
@@ -110,8 +113,10 @@ def main():
 
     while True:
         interval = args.interval or get_interval()
-        ttl      = interval + 5
-        send_all(ttl)
+        if is_enabled():
+            send_all(interval + 5)
+        else:
+            print("Weather disabled — sleeping")
         if args.once:
             break
         time.sleep(interval * 60)
