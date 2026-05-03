@@ -523,6 +523,7 @@ while True:
             _heartbeat_interval = min(_heartbeat_interval * 2, 3600)
         if not _wifi_off and sleep_start and now - sleep_start > WIFI_OFF_MINUTES * 60:
             log(f"Asleep >{WIFI_OFF_MINUTES}min — turning off WiFi")
+            notify_openclaw("wifi_off")
             try:
                 wifi.radio.enabled = False
             except Exception as e:
