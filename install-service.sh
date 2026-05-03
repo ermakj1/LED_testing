@@ -9,14 +9,18 @@
 set -e
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUN_USER="$(whoami)"
 SERVICE_NAME="led-feeds"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
 echo "Installing ${SERVICE_NAME} service"
 echo "  Repo: ${REPO_DIR}"
+echo "  User: ${RUN_USER}"
 
-# Write the service file with the real repo path substituted in
-sed "s|REPO_PATH|${REPO_DIR}|g" "${REPO_DIR}/led-feeds.service" \
+# Write the service file with repo path and current user substituted in
+sed -e "s|REPO_PATH|${REPO_DIR}|g" \
+    -e "s|RUN_USER|${RUN_USER}|g" \
+    "${REPO_DIR}/led-feeds.service" \
     | sudo tee "${SERVICE_FILE}" > /dev/null
 
 sudo systemctl daemon-reload
