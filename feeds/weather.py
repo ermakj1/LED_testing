@@ -1,48 +1,64 @@
 #!/usr/bin/env python3
 """
-Fetch weather for Kirkland, WA and send to LED display.
+Fetch weather for configured cities and send to LED display.
 
 Uses Open-Meteo (free, no API key).
+Cities are configured in feeds/config.json.
 
 Usage:
-    python3 feeds/weather.py                # every 30 min
-    python3 feeds/weather.py --interval 60  # every hour
+    python3 feeds/weather.py                # run on schedule
     python3 feeds/weather.py --once         # send once and exit
+    python3 feeds/weather.py --interval 60  # every hour
 """
 
 import time
 import json
 import argparse
 import urllib.request
+from pathlib import Path
 
-BOARD_URL = "http://matrixportal.local:8080/add"
+CONFIG_PATH = Path(__file__).parent / "config.json"
 
-LATITUDE  = 47.6815
-LONGITUDE = -122.2087
-TIMEZONE  = "America/Los_Angeles"
+DEFAULT_CITIES = [
+    {"name": "Kirkland, WA", "lat": 47.6815, "lon": -122.2087, "timezone": "America/Los_Angeles"}
+]
 
-# WMO weather code → display condition
+def load_config():
+    if CONFIG_PATH.exists():
+        with open(CONFIG_PATH) as f:
+            return json.load(f)
+    return {}
+
+def get_board_url():
+    return load_config().get("board_url", "http://matrixportal.local:8080") + "/add"
+
+def get_cities():
+    return load_config().get("weather", {}).get("cities", DEFAULT_CITIES)
+
+def get_interval():
+    return load_config().get("weather", {}).get("interval_minutes", 30)
+
 def wmo_to_condition(code):
-    if code == 0:                       return "sunny"
-    if code in (1, 2):                  return "sunny"
-    if code == 3:                       return "cloudy"
-    if code in (45, 48):                return "cloudy"
-    if code in (51, 53, 55, 56, 57):   return "rain"
-    if code in (61, 63, 65, 66, 67):   return "rain"
-    if code in (71, 73, 75, 77):       return "snow"
-    if code in (80, 81, 82):            return "rain"
-    if code in (85, 86):                return "snow"
-    if code in (95, 96, 99):            return "storm"
+    if code in (0, 1, 2):              return "sunny"
+    if code == 3:                      return "cloudy"
+    if code in (45, 48):               return "cloudy"
+    if code in (51, 53, 55, 56, 57):  return "rain"
+    if code in (61, 63, 65, 66, 67):  return "rain"
+    if code in (71, 73, 75, 77):      return "snow"
+    if code in (80, 81, 82):           return "rain"
+    if code in (85, 86):               return "snow"
+    if code in (95, 96, 99):           return "storm"
     return "cloudy"
 
-def fetch_weather():
+def fetch_weather(city):
+    lat, lon, tz = city["lat"], city["lon"], city.get("timezone", "UTC")
     url = (
         "https://api.open-meteo.com/v1/forecast"
-        f"?latitude={LATITUDE}&longitude={LONGITUDE}"
+        f"?latitude={lat}&longitude={lon}"
         "&current=weather_code"
         "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max"
         "&temperature_unit=fahrenheit"
-        f"&timezone={TIMEZONE.replace('/', '%2F')}"
+        f"&timezone={tz.replace('/', '%2F')}"
         "&forecast_days=1"
     )
     with urllib.request.urlopen(url, timeout=10) as resp:
@@ -54,45 +70,48 @@ def fetch_weather():
     precip    = data["daily"]["precipitation_probability_max"][0]
     return condition, high, low, precip
 
-def post_to_board(condition, high, low, precip, ttl_minutes):
+def post_to_board(board_url, condition, high, low, precip, ttl_minutes):
     payload = {
-        "category": "weather",
-        "condition": condition,
-        "high": high,
-        "low": low,
-        "precip": precip,
+        "category":    "weather",
+        "condition":   condition,
+        "high":        high,
+        "low":         low,
+        "precip":      precip,
         "ttl_minutes": ttl_minutes,
     }
     data = json.dumps(payload).encode()
-    req = urllib.request.Request(
-        BOARD_URL,
-        data=data,
+    req  = urllib.request.Request(
+        board_url, data=data,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=5) as resp:
         return json.loads(resp.read())
 
+def send_all(ttl_minutes):
+    board_url = get_board_url()
+    cities    = get_cities()
+    if not cities:
+        print("No cities configured")
+        return
+    for city in cities:
+        try:
+            condition, high, low, precip = fetch_weather(city)
+            result = post_to_board(board_url, condition, high, low, precip, ttl_minutes)
+            print(f"{city['name']}: {condition}  H:{high}  L:{low}  precip:{precip}%  → {result}")
+        except Exception as e:
+            print(f"{city['name']}: Error — {e}")
+
 def main():
-    parser = argparse.ArgumentParser(description="Send Kirkland weather to LED display")
-    parser.add_argument("--interval", type=float, default=30, help="Update interval in minutes (default: 30)")
+    parser = argparse.ArgumentParser(description="Send weather to LED display")
+    parser.add_argument("--interval", type=float, default=None, help="Update interval in minutes")
     parser.add_argument("--once", action="store_true", help="Send once and exit")
     args = parser.parse_args()
 
-    interval = args.interval
-    ttl = interval + 5
-
-    if not args.once:
-        print(f"Sending weather every {interval} min to {BOARD_URL}")
-
     while True:
-        try:
-            condition, high, low, precip = fetch_weather()
-            result = post_to_board(condition, high, low, precip, ttl)
-            print(f"{condition}  H:{high}  L:{low}  precip:{precip}%  → {result}")
-        except Exception as e:
-            print(f"Error: {e}")
-
+        interval = args.interval or get_interval()
+        ttl      = interval + 5
+        send_all(ttl)
         if args.once:
             break
         time.sleep(interval * 60)

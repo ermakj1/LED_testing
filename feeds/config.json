@@ -1,0 +1,28 @@
+{
+  "board_url": "http://matrixportal.local:8080",
+  "weather": {
+    "interval_minutes": 30,
+    "cities": [
+      {
+        "name": "Kirkland, WA, United States",
+        "lat": 47.6815,
+        "lon": -122.2087,
+        "timezone": "America/Los_Angeles"
+      }
+    ]
+  },
+  "stock": {
+    "interval_minutes": 5,
+    "market_hours_only": true,
+    "symbols": ["MSFT"]
+  },
+  "jokes": {
+    "interval_minutes": 30,
+    "enabled": true
+  },
+  "animations": {
+    "interval_minutes": 20,
+    "enabled": true,
+    "types": ["fireworks", "rainbow", "plasma", "fire", "life", "cube", "dvd", "dvd_text", "matrix"]
+  }
+}
