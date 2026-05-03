@@ -11,11 +11,14 @@ Usage:
     python3 feeds/weather.py --interval 60  # every hour
 """
 
+import sys
 import time
 import json
 import argparse
 import urllib.request
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+from util import single_instance
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
@@ -106,6 +109,7 @@ def send_all(ttl_minutes):
             print(f"{city['name']}: Error — {e}")
 
 def main():
+    single_instance("weather")
     parser = argparse.ArgumentParser(description="Send weather to LED display")
     parser.add_argument("--interval", type=float, default=None, help="Update interval in minutes")
     parser.add_argument("--once", action="store_true", help="Send once and exit")

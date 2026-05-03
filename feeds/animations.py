@@ -11,12 +11,15 @@ Usage:
     python3 feeds/animations.py --once             # send one and exit
 """
 
+import sys
 import time
 import json
 import random
 import argparse
 import urllib.request
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+from util import single_instance
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
@@ -58,6 +61,7 @@ def send_animation(board_url, anim_type, duration=10):
         return json.loads(resp.read())
 
 def main():
+    single_instance("animations")
     parser = argparse.ArgumentParser(description="Send animations to LED display")
     parser.add_argument("--interval", type=float, default=None, help="Minutes between animations")
     parser.add_argument("--type", choices=ALL_TYPES, default=None, help="Animation type (default: random)")

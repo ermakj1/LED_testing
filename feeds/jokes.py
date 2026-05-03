@@ -11,11 +11,14 @@ Usage:
     python3 feeds/jokes.py --once          # send one joke and exit
 """
 
+import sys
 import time
 import json
 import argparse
 import urllib.request
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+from util import single_instance
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
@@ -70,6 +73,7 @@ def send_one():
         print(f"Joke: {joke['joke']}")
 
 def main():
+    single_instance("jokes")
     parser = argparse.ArgumentParser(description="Send jokes to LED display")
     parser.add_argument("--interval", type=float, default=None, help="Minutes between jokes")
     parser.add_argument("--once", action="store_true", help="Send one joke and exit")

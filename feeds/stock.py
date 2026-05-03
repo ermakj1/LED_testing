@@ -10,12 +10,15 @@ Usage:
     python3 feeds/stock.py --interval 10  # every 10 min
 """
 
+import sys
 import time
 import json
 import argparse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+from util import single_instance
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
@@ -95,6 +98,7 @@ def send_all(ttl_minutes):
             print(f"{symbol}: Error — {e}")
 
 def main():
+    single_instance("stock")
     parser = argparse.ArgumentParser(description="Send stock prices to LED display")
     parser.add_argument("--interval", type=float, default=None, help="Update interval in minutes")
     parser.add_argument("--once", action="store_true", help="Send once and exit")
