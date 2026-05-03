@@ -86,11 +86,12 @@ btn_down.switch_to_input(pull=digitalio.Pull.UP)
 pir = digitalio.DigitalInOut(board.A3)
 pir.switch_to_input()
 
-last_motion_ref  = [time.monotonic()]
-asleep           = False
-sleep_start      = None
-last_heartbeat   = None
-_last_motion_log = 0   # debounce motion logging
+last_motion_ref      = [time.monotonic()]
+asleep               = False
+sleep_start          = None
+last_heartbeat       = None
+_heartbeat_interval  = HEARTBEAT_SECONDS  # doubles each log, resets on wake
+_last_motion_log     = 0   # debounce motion logging
 
 def pir_active():
     return PIR_ENABLED and pir.value
@@ -490,15 +491,17 @@ while True:
     if PIR_ENABLED and not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
         log(f"No motion for {SLEEP_TIMEOUT_SECONDS}s — sleeping")
         clear_display()
-        asleep         = True
-        sleep_start    = time.monotonic()
-        last_heartbeat = time.monotonic()
+        asleep              = True
+        sleep_start         = time.monotonic()
+        last_heartbeat      = time.monotonic()
+        _heartbeat_interval = HEARTBEAT_SECONDS
 
     if asleep:
         now = time.monotonic()
-        if now - last_heartbeat >= HEARTBEAT_SECONDS:
+        if now - last_heartbeat >= _heartbeat_interval:
             log(f"Still sleeping... ({int(now - sleep_start)}s)")
-            last_heartbeat = now
+            last_heartbeat      = now
+            _heartbeat_interval = min(_heartbeat_interval * 2, 3600)
         if not btn_up.value:
             slept = int(time.monotonic() - sleep_start) if sleep_start else 0
             log(f"Woken by UP button (slept {slept}s)")
@@ -518,9 +521,10 @@ while True:
     if not btn_down.value:
         log("DOWN button — sleeping")
         clear_display()
-        asleep         = True
-        sleep_start    = time.monotonic()
-        last_heartbeat = time.monotonic()
+        asleep              = True
+        sleep_start         = time.monotonic()
+        last_heartbeat      = time.monotonic()
+        _heartbeat_interval = HEARTBEAT_SECONDS
         time.sleep(0.3)
         continue
 
