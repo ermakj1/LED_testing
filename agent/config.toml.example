@@ -1,0 +1,36 @@
+[board]
+# URL of the LED display (use IP if mDNS doesn't work on Windows)
+url = "http://matrixportal.local:8080"
+
+[agent]
+# This machine's IP on the local network — the board sends callbacks here.
+# Leave blank to auto-detect, or set explicitly if auto-detect picks wrong interface.
+callback_host = ""
+callback_port = 8090
+
+[anthropic]
+# Get a key at https://console.anthropic.com
+# Remove or leave blank to disable Claude features.
+api_key = ""
+# Model to use — haiku is fast and cheap, good for short messages
+model   = "claude-haiku-4-5-20251001"
+
+[content]
+stock_symbol     = "MSFT"
+weather_lat      = 47.6815   # Kirkland, WA
+weather_lon      = -122.2087
+
+enable_stock      = true
+enable_weather    = true
+enable_jokes      = true
+enable_animations = true
+enable_onthisday  = true
+enable_claude     = true   # requires api_key above
+
+[schedule]
+stock_interval_minutes       = 5
+weather_interval_minutes     = 30
+joke_interval_minutes        = 45
+animation_interval_minutes   = 20
+claude_interval_minutes      = 60
+onthisday_hour               = 8   # send the on-this-day fact once, at this hour
