@@ -406,7 +406,7 @@ def serve_schema(request: Request):
             "animation": {
                 "description": "Full-panel decorative animation",
                 "fields": {
-                    "type": "string — fireworks | rainbow | dvd | dvd_text | matrix (default: fireworks)",
+                    "type": "string — fireworks | rainbow | dvd | dvd_text | matrix | plasma | fire | life | cube (default: fireworks)",
                     "duration": "number (optional) — seconds to run (default 10)"
                 }
             }

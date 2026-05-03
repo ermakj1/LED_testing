@@ -88,6 +88,26 @@ Send a POST to `/add` with JSON:
 {"category": "text", "text": "Hello world", "ttl_minutes": 60}
 ```
 
+## Animations
+
+Send a POST to `/add` with `category: animation` and a `type` field:
+
+| Type | Description |
+|------|-------------|
+| `fireworks` | Colored particle bursts from random points |
+| `rainbow` | Full-panel hue sweep with brightness wave |
+| `plasma` | Flowing sine-wave color fields |
+| `fire` | Bottom-up flame simulation |
+| `life` | Conway's Game of Life, re-randomizes on stagnation |
+| `cube` | Spinning wireframe cube with perspective |
+| `dvd` | Bouncing colored rectangle |
+| `dvd_text` | Bouncing "DVD" text |
+| `matrix` | Green falling pixel streams |
+
+All animations also accessible from the web UI (`/ui`) and via `feeds/animations.py`.
+
+Optional field: `duration` (seconds, default 10).
+
 ## Feed scripts
 
 | Script | Description |
@@ -95,11 +115,13 @@ Send a POST to `/add` with JSON:
 | `feeds/stock.py` | MSFT stock price from Yahoo Finance, every 5 min during market hours |
 | `feeds/weather.py` | Kirkland WA weather from Open-Meteo, every 30 min |
 | `feeds/jokes.py` | Random joke from JokeAPI, every 30 min |
+| `feeds/animations.py` | Random decorative animation on a schedule |
 
 All feed scripts support `--once` to send a single update and exit, and `--interval N` to change the update frequency.
 
 ## Board behavior
 
-- **Clock** shown when queue is empty. Color shifts with time of day (orange at dawn, white during day, amber at dusk, blue at night). Seconds shown as a progress bar along the bottom.
+- **Clock** shown when queue is empty. Color shifts with time of day (orange at dawn, white during day, amber at dusk, blue at night). Seconds shown as a progress bar along the bottom. Top-right pixel turns red for 2s on motion detection.
 - **Sleep** triggered by PIR inactivity timeout (5 min). UP button wakes, DOWN button sleeps. Can also be controlled from the web UI.
+- **WiFi power saving** — WiFi shuts off after 60 min of sleep. Reconnects automatically on wake (PIR or UP button). Openclaw receives `wifi_off` / `person_detected` events.
 - **USB drive** disabled by default (enables WiFi deploy). Use the web UI to re-enable USB when you need to update libraries.

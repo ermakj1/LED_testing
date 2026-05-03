@@ -852,6 +852,235 @@ def _anim_matrix_rain(duration):
     return "done"
 
 
+def _anim_plasma(duration):
+    """Flowing sine-wave color fields via palette cycling — pre-computed once."""
+    N  = 32
+    bm  = displayio.Bitmap(PANEL_WIDTH, PANEL_HEIGHT, N)
+    pal = displayio.Palette(N)
+
+    # Build static index map — only done once at start
+    for y in range(PANEL_HEIGHT):
+        sy = math.sin(y * 0.4)
+        for x in range(PANEL_WIDTH):
+            v = math.sin(x * 0.3) + sy + math.sin((x + y) * 0.15)
+            bm[x, y] = int((v + 3.0) / 6.0 * N) % N
+
+    grp = displayio.Group()
+    grp.append(displayio.TileGrid(bm, pixel_shader=pal))
+    _display.root_group = grp
+
+    end   = time.monotonic() + duration
+    frame = 0
+
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+        t = frame * 0.04
+        for i in range(N):
+            hue = (i / N + t * 0.25) % 1.0
+            pal[i] = _hsv_to_rgb(hue, 1.0, 0.9)
+        frame += 1
+        time.sleep(0.04)
+
+    return "done"
+
+
+def _anim_fire(duration):
+    """Classic bottom-up fire simulation — 32×16 grid scaled ×2."""
+    FW, FH = PANEL_WIDTH // 2, PANEL_HEIGHT // 2   # 32×16
+    N      = 32  # heat levels
+
+    pal = displayio.Palette(N)
+    for i in range(N):
+        t = i / (N - 1)
+        if t < 0.4:
+            r = int(t / 0.4 * 180);  g = 0; b = 0
+        elif t < 0.7:
+            r = 180 + int((t - 0.4) / 0.3 * 75)
+            g = int((t - 0.4) / 0.3 * 140); b = 0
+        else:
+            r = 255
+            g = 140 + int((t - 0.7) / 0.3 * 115)
+            b = int((t - 0.7) / 0.3 * 200)
+        pal[i] = (r << 16) | (g << 8) | b
+
+    bm   = displayio.Bitmap(FW, FH, N)
+    grp  = displayio.Group(scale=2)
+    grp.append(displayio.TileGrid(bm, pixel_shader=pal))
+    _display.root_group = grp
+
+    heat = [0] * (FW * FH)
+    end  = time.monotonic() + duration
+
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+
+        # Seed bottom two rows
+        for x in range(FW):
+            heat[(FH - 1) * FW + x] = random.randint(N // 2, N - 1)
+            heat[(FH - 2) * FW + x] = random.randint(N // 2, N - 1)
+
+        # Diffuse upward
+        for y in range(FH - 3, -1, -1):
+            row1 = (y + 1) * FW
+            row2 = (y + 2) * FW
+            for x in range(FW):
+                avg = (heat[row1 + x] +
+                       heat[row2 + x] +
+                       heat[row1 + (x - 1) % FW] +
+                       heat[row1 + (x + 1) % FW]) >> 2
+                heat[y * FW + x] = max(0, avg - random.randint(0, 1))
+
+        # Draw
+        for y in range(FH):
+            row = y * FW
+            for x in range(FW):
+                bm[x, y] = heat[row + x]
+
+        time.sleep(0.05)
+
+    return "done"
+
+
+def _anim_game_of_life(duration):
+    """Conway's Game of Life with color cycling and auto-randomize on stagnation."""
+    W, H = PANEL_WIDTH, PANEL_HEIGHT
+
+    def randomize():
+        return [1 if random.random() < 0.35 else 0 for _ in range(W * H)]
+
+    current = randomize()
+    nxt     = [0] * (W * H)
+    ci      = 0
+
+    bm  = displayio.Bitmap(W, H, 2)
+    pal = displayio.Palette(2)
+    pal[0] = 0x000000
+    pal[1] = _ANIM_COLORS[ci]
+    grp = displayio.Group()
+    grp.append(displayio.TileGrid(bm, pixel_shader=pal))
+    _display.root_group = grp
+
+    end      = time.monotonic() + duration
+    gen      = 0
+    prev_pop = -1
+    stagnant = 0
+
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+
+        pop = 0
+        for y in range(H):
+            ym1 = (y - 1) % H
+            yp1 = (y + 1) % H
+            for x in range(W):
+                n = (current[ym1 * W + (x-1) % W] + current[ym1 * W + x] + current[ym1 * W + (x+1) % W] +
+                     current[y   * W + (x-1) % W]                         + current[y   * W + (x+1) % W] +
+                     current[yp1 * W + (x-1) % W] + current[yp1 * W + x] + current[yp1 * W + (x+1) % W])
+                c     = current[y * W + x]
+                alive = 1 if (c and n in (2, 3)) or (not c and n == 3) else 0
+                nxt[y * W + x] = alive
+                pop += alive
+                bm[x, y] = alive
+
+        current, nxt = nxt, current
+        gen += 1
+
+        if gen % 15 == 0:
+            ci     = (ci + 1) % len(_ANIM_COLORS)
+            pal[1] = _ANIM_COLORS[ci]
+
+        stagnant = stagnant + 1 if pop == prev_pop else 0
+        prev_pop = pop
+        if pop == 0 or stagnant > 8:
+            current  = randomize()
+            stagnant = 0
+
+        time.sleep(0.1)
+
+    return "done"
+
+
+def _bresenham(bm, x0, y0, x1, y1):
+    """Draw a line on bm (value 1) using Bresenham's algorithm."""
+    dx  = abs(x1 - x0);  dy  = abs(y1 - y0)
+    sx  = 1 if x0 < x1 else -1
+    sy  = 1 if y0 < y1 else -1
+    err = dx - dy
+    while True:
+        if 0 <= x0 < PANEL_WIDTH and 0 <= y0 < PANEL_HEIGHT:
+            bm[x0, y0] = 1
+        if x0 == x1 and y0 == y1:
+            break
+        e2 = err * 2
+        if e2 > -dy: err -= dy; x0 += sx
+        if e2 <  dx: err += dx; y0 += sy
+
+
+def _anim_cube(duration):
+    """Spinning wireframe cube with perspective projection."""
+    VERTS = [
+        (-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),
+        (-1,-1, 1),(1,-1, 1),(1,1, 1),(-1,1, 1),
+    ]
+    EDGES = [
+        (0,1),(1,2),(2,3),(3,0),   # back face
+        (4,5),(5,6),(6,7),(7,4),   # front face
+        (0,4),(1,5),(2,6),(3,7),   # connecting edges
+    ]
+
+    bm  = displayio.Bitmap(PANEL_WIDTH, PANEL_HEIGHT, 2)
+    pal = displayio.Palette(2)
+    pal[0] = 0x000000
+    pal[1] = _ANIM_COLORS[0]
+    grp = displayio.Group()
+    grp.append(displayio.TileGrid(bm, pixel_shader=pal))
+    _display.root_group = grp
+
+    end   = time.monotonic() + duration
+    frame = 0
+    ci    = 0
+
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+
+        bm.fill(0)
+        ax = frame * 0.04
+        ay = frame * 0.06
+
+        # Rotate and project all 8 vertices
+        cax, sax = math.cos(ax), math.sin(ax)
+        cay, say = math.cos(ay), math.sin(ay)
+        pts = []
+        for vx, vy, vz in VERTS:
+            ry  = vy * cax - vz * sax
+            rz  = vy * sax + vz * cax
+            rx  = vx * cay + rz * say
+            rz2 = -vx * say + rz * cay
+            d   = rz2 + 3.5
+            pts.append((int(rx / d * 18 + PANEL_WIDTH  // 2),
+                        int(ry / d * 18 + PANEL_HEIGHT // 2)))
+
+        for i, j in EDGES:
+            _bresenham(bm, pts[i][0], pts[i][1], pts[j][0], pts[j][1])
+
+        if frame % 40 == 0:
+            ci     = (ci + 1) % len(_ANIM_COLORS)
+            pal[1] = _ANIM_COLORS[ci]
+
+        frame += 1
+        time.sleep(0.05)
+
+    return "done"
+
+
 def render_animation(msg):
     """Dispatch to an animation by type field. Default duration 10s."""
     anim     = msg.get("type", "fireworks")
@@ -860,4 +1089,8 @@ def render_animation(msg):
     if anim == "dvd":       return _anim_dvd_bounce(duration)
     if anim == "dvd_text":  return _anim_dvd_text(duration)
     if anim == "matrix":    return _anim_matrix_rain(duration)
+    if anim == "plasma":    return _anim_plasma(duration)
+    if anim == "fire":      return _anim_fire(duration)
+    if anim == "life":      return _anim_game_of_life(duration)
+    if anim == "cube":      return _anim_cube(duration)
     return _anim_fireworks(duration)

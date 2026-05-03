@@ -19,7 +19,8 @@ import urllib.request
 
 BOARD_URL = "http://matrixportal.local:8080/add"
 
-ANIMATION_TYPES = ["fireworks", "rainbow", "dvd", "dvd_text", "matrix"]
+ANIMATION_TYPES = ["fireworks", "rainbow", "dvd", "dvd_text", "matrix",
+                   "plasma", "fire", "life", "cube"]
 
 
 def send_animation(anim_type=None, duration=10):
