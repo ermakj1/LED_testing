@@ -272,7 +272,14 @@ def _print_compact_header(cfg):
     print()
     print("  " + "─" * 56)
     print(status)
-    print("  1:Weather  2:Stock  3:Jokes  4:Anim  5:Board  c:Clear  r:Restart  q:Quit&Stop")
+    print("  [1] Weather settings")
+    print("  [2] Stock settings")
+    print("  [3] Joke settings")
+    print("  [4] Animation settings")
+    print("  [5] Board URL")
+    print("  [c] Clear board queue")
+    print("  [r] Restart all feeds")
+    print("  [q] Quit and stop all feeds")
     print("  " + "─" * 56)
 
 def _do_clear_queue(cfg):
