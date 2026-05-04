@@ -97,6 +97,8 @@ _msgs_since_clock        = 0    # show clock break after this many messages
 CLOCK_BREAK_EVERY        = 4    # messages between clock breaks
 CLOCK_BREAK_SECS         = 30   # how long to show the clock each break
 _last_presence_heartbeat = 0    # last time we sent the presence callback
+SLEEP_MUTE_SECONDS       = 5    # ignore motion for this long after manual sleep
+_sleep_mute_until        = 0    # monotonic time after which motion re-enables
 
 def pir_active():
     return PIR_ENABLED and pir.value
@@ -475,7 +477,7 @@ while True:
     elif _pending_wake:
         _pending_wake = False
 
-    if pir_active():
+    if pir_active() and time.monotonic() >= _sleep_mute_until:
         if asleep:
             slept = int(time.monotonic() - sleep_start) if sleep_start else 0
             log(f"Motion detected — waking up (slept {slept}s)")
@@ -537,6 +539,7 @@ while True:
         sleep_start         = time.monotonic()
         last_heartbeat      = time.monotonic()
         _heartbeat_interval = HEARTBEAT_SECONDS
+        _sleep_mute_until   = time.monotonic() + SLEEP_MUTE_SECONDS
         time.sleep(0.3)
         continue
 
