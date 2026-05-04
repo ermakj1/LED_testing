@@ -29,10 +29,12 @@ _btn_up          = None
 _btn_down        = None
 _last_motion_ref = None  # mutable list [float] shared with code.py
 _sleep_timeout   = None
+_on_motion       = None  # callback(board_time_str) fired on motion while awake
+_last_motion_cb  = 0     # debounce: don't fire more than once per 10s
 
 
-def init(display, server, pir, btn_up, btn_down, last_motion_ref, sleep_timeout):
-    global _display, _server, _pir, _btn_up, _btn_down, _last_motion_ref, _sleep_timeout
+def init(display, server, pir, btn_up, btn_down, last_motion_ref, sleep_timeout, on_motion=None):
+    global _display, _server, _pir, _btn_up, _btn_down, _last_motion_ref, _sleep_timeout, _on_motion
     _display         = display
     _server          = server
     _pir             = pir
@@ -40,6 +42,7 @@ def init(display, server, pir, btn_up, btn_down, last_motion_ref, sleep_timeout)
     _btn_down        = btn_down
     _last_motion_ref = last_motion_ref
     _sleep_timeout   = sleep_timeout
+    _on_motion       = on_motion
 
 
 # ---------------------------------------------------------------------------
@@ -48,9 +51,16 @@ def init(display, server, pir, btn_up, btn_down, last_motion_ref, sleep_timeout)
 
 def _poll():
     """Poll server, update PIR timestamp, check buttons. Returns action or None."""
+    global _last_motion_cb
     _server.poll()
     if _pir.value:
-        _last_motion_ref[0] = time.monotonic()
+        now = time.monotonic()
+        _last_motion_ref[0] = now
+        if _on_motion and now - _last_motion_cb >= 10:
+            _last_motion_cb = now
+            t = time.localtime()
+            board_time = f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}"
+            _on_motion(board_time)
     if not _btn_up.value:
         return "skip"
     if not _btn_down.value:
