@@ -388,45 +388,22 @@ def render_clock():
 
 
 def render_greeting(text):
-    lbl = label.Label(terminalio.FONT, text=text, color=GREETING_COLOR)
-    lbl.y = PANEL_HEIGHT // 2 - 3
-    group = displayio.Group()
-    group.append(lbl)
-    _display.root_group = group
-    return _scroll_label(lbl)
+    return _show_text(text, GREETING_COLOR, 0x0A0500, hold_secs=4)
 
 
 def render_generic(msg):
-    lbl = label.Label(terminalio.FONT, text=msg.get("text", ""), color=0xFFFFFF)
-    lbl.y = PANEL_HEIGHT // 2 - 3
-    group = displayio.Group()
-    group.append(_bg(0x0A0A0A))
-    group.append(lbl)
-    _display.root_group = group
-    return _scroll_label(lbl)
+    return _show_text(msg.get("text", ""), 0xFFFFFF, 0x0A0A0A)
 
 
 def render_news(msg):
-    lbl = label.Label(terminalio.FONT, text=msg.get("text", ""), color=0xDD88FF)
-    lbl.y = PANEL_HEIGHT // 2 - 3
-    group = displayio.Group()
-    group.append(_bg(0x0C0018))
-    group.append(lbl)
-    _display.root_group = group
-    return _scroll_label(lbl)
+    return _show_text(msg.get("text", ""), 0xDD88FF, 0x0C0018)
 
 
 def render_calendar(msg):
     time_str = msg.get("time", "")
     text     = msg.get("text", "")
     full     = f"{time_str}: {text}" if time_str else text
-    lbl = label.Label(terminalio.FONT, text=full, color=0xFFEE44)
-    lbl.y = PANEL_HEIGHT // 2 - 3
-    group = displayio.Group()
-    group.append(_bg(0x0C0A00))
-    group.append(lbl)
-    _display.root_group = group
-    return _scroll_label(lbl)
+    return _show_text(full, 0xFFEE44, 0x0C0A00)
 
 
 def render_stock(msg):
@@ -534,9 +511,15 @@ def render_weather(msg):
         lbl.y = y
         group.append(lbl)
 
-    if high   is not None: add_label(f"H:{int(high)}", 0xFF8844, 4)
-    if low    is not None: add_label(f"L:{int(low)}",  0x4499FF, 13)
-    if precip is not None: add_label(f"{int(precip)}%",0x44CCFF, 22)
+    city = msg.get("city", "")
+    if city:
+        add_label(city[:8],           0xCCCCCC, 4)
+        if high   is not None: add_label(f"H:{int(high)}", 0xFF8844, 14)
+        if low    is not None: add_label(f"L:{int(low)}",  0x4499FF, 24)
+    else:
+        if high   is not None: add_label(f"H:{int(high)}", 0xFF8844, 4)
+        if low    is not None: add_label(f"L:{int(low)}",  0x4499FF, 13)
+        if precip is not None: add_label(f"{int(precip)}%",0x44CCFF, 22)
 
     _display.root_group = group
 

@@ -15,6 +15,7 @@ import sys
 import time
 import json
 import argparse
+import traceback
 import urllib.request
 from pathlib import Path
 from datetime import datetime
@@ -90,6 +91,7 @@ def main():
                 send_one()
             except Exception as e:
                 log(f"Error: {e}")
+                log(traceback.format_exc().strip())
         else:
             log("Jokes disabled — sleeping")
 

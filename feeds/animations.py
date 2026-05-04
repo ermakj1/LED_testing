@@ -16,6 +16,7 @@ import time
 import json
 import random
 import argparse
+import traceback
 import urllib.request
 from pathlib import Path
 from datetime import datetime
@@ -83,6 +84,7 @@ def main():
                 log(f"Sent {chosen} ({args.duration}s): {result}")
             except Exception as e:
                 log(f"Error: {e}")
+                log(traceback.format_exc().strip())
         else:
             log("Animations disabled — sleeping")
 

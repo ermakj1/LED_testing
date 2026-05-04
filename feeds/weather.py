@@ -15,6 +15,7 @@ import sys
 import time
 import json
 import argparse
+import traceback
 import urllib.request
 from pathlib import Path
 from datetime import datetime
@@ -80,7 +81,7 @@ def fetch_weather(city):
     precip    = data["daily"]["precipitation_probability_max"][0]
     return condition, high, low, precip
 
-def post_to_board(board_url, condition, high, low, precip, ttl_minutes):
+def post_to_board(board_url, condition, high, low, precip, ttl_minutes, city=None):
     payload = {
         "category":    "weather",
         "condition":   condition,
@@ -89,6 +90,8 @@ def post_to_board(board_url, condition, high, low, precip, ttl_minutes):
         "precip":      precip,
         "ttl_minutes": ttl_minutes,
     }
+    if city:
+        payload["city"] = city
     data = json.dumps(payload).encode()
     req  = urllib.request.Request(
         board_url, data=data,
@@ -99,18 +102,21 @@ def post_to_board(board_url, condition, high, low, precip, ttl_minutes):
         return json.loads(resp.read())
 
 def send_all(ttl_minutes):
-    board_url = get_board_url()
-    cities    = get_cities()
+    board_url   = get_board_url()
+    cities      = get_cities()
+    multi_city  = len(cities) > 1
     if not cities:
-        print("No cities configured")
+        log("No cities configured")
         return
     for city in cities:
         try:
             condition, high, low, precip = fetch_weather(city)
-            result = post_to_board(board_url, condition, high, low, precip, ttl_minutes)
+            short_name = city["name"].split(",")[0].strip() if multi_city else None
+            result = post_to_board(board_url, condition, high, low, precip, ttl_minutes, city=short_name)
             log(f"{city['name']}: {condition}  H:{high}  L:{low}  precip:{precip}%  → {result}")
         except Exception as e:
             log(f"{city['name']}: Error — {e}")
+            log(traceback.format_exc().strip())
 
 def main():
     single_instance("weather")

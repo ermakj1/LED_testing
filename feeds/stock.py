@@ -14,6 +14,7 @@ import sys
 import time
 import json
 import argparse
+import traceback
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -100,6 +101,7 @@ def send_all(ttl_minutes):
             log(f"{symbol}  ${price:.2f}  {change:+.2f}%  → {result}")
         except Exception as e:
             log(f"{symbol}: Error — {e}")
+            log(traceback.format_exc().strip())
 
 def main():
     single_instance("stock")

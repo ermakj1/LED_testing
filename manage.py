@@ -155,18 +155,23 @@ class ManagedProcess:
         return f"exited ({self.proc.returncode})"
 
 
-_processes: list[ManagedProcess] = []
-_proc_lock  = threading.Lock()
-_log_lines  = []
-_log_lock   = threading.Lock()
-MAX_LOG     = 8
+_processes:   list[ManagedProcess] = []
+_proc_lock    = threading.Lock()
+_cfg_ref      = None   # set in main(); lets _log auto-reprint the header
+_line_count   = 0
+_line_lock    = threading.Lock()
+HEADER_EVERY  = 20
 
 def _log(msg):
-    line = f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"
-    with _log_lock:
-        _log_lines.append(line)
-        if len(_log_lines) > MAX_LOG:
-            _log_lines.pop(0)
+    global _line_count
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+    if _cfg_ref is None:
+        return
+    with _line_lock:
+        _line_count += 1
+        count = _line_count
+    if count % HEADER_EVERY == 0:
+        _print_compact_header(_cfg_ref)
 
 def _build_processes():
     return [
@@ -246,6 +251,36 @@ def _board_register(cfg, callback_url):
         _log(f"Registered callback: {callback_url}")
     except Exception as e:
         _log(f"Callback registration failed (will retry on next board wake): {e}")
+
+# ── Compact header (reprinted in live log stream) ─────────────────────────────
+
+def _print_compact_header(cfg):
+    with _proc_lock:
+        running = {p.name: (p.proc and p.proc.poll() is None) for p in _processes}
+    status = "  " + "   ".join(
+        ("✓" if running.get(n) else "✗") + n +
+        ("(off)" if not cfg.get(n, {}).get("enabled", True) else "")
+        for n in ["weather", "stock", "jokes", "animations"]
+    )
+    print()
+    print("  " + "─" * 56)
+    print(status)
+    print("  1:Weather  2:Stock  3:Jokes  4:Anim  5:Board  c:Clear  r:Restart  q:Quit")
+    print("  " + "─" * 56)
+
+def _do_clear_queue(cfg):
+    board_url = cfg.get("board_url", "")
+    try:
+        req = urllib.request.Request(
+            f"{board_url}/clear", data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as r:
+            json.loads(r.read())
+        _log("Board queue cleared")
+    except Exception as e:
+        _log(f"Clear failed: {e}")
 
 # ── Menu helpers ──────────────────────────────────────────────────────────────
 
@@ -491,61 +526,24 @@ def menu_board(cfg):
             print("  Saved. Restarting all feeds.")
             pause()
 
-# ── Status ────────────────────────────────────────────────────────────────────
+# ── Main loop (live streaming) ────────────────────────────────────────────────
 
-def menu_status():
-    header("Feed Status")
-    with _proc_lock:
-        for p in _processes:
-            print(f"  {p.name:<12} {p.status}")
-    pause()
+def main_loop(cfg):
+    global _cfg_ref, _line_count
+    _cfg_ref = cfg
 
-# ── Main menu ─────────────────────────────────────────────────────────────────
+    print("\n  LED Display Manager — log streams below, Enter to refresh controls")
+    _print_compact_header(cfg)
 
-def main_menu(cfg):
     while True:
-        clear()
-        print("\n  LED Display Manager")
-        hr()
+        with _line_lock:
+            _line_count = 0  # reset so next 20 lines triggers a reprint
 
-        with _proc_lock:
-            running = {
-                p.name: (p.proc and p.proc.poll() is None)
-                for p in _processes
-            }
+        try:
+            cmd = input("  > ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            break
 
-        feed_cfg = {
-            "weather":    cfg.get("weather",    {}).get("enabled", True),
-            "stock":      cfg.get("stock",      {}).get("enabled", True),
-            "jokes":      cfg.get("jokes",      {}).get("enabled", True),
-            "animations": cfg.get("animations", {}).get("enabled", True),
-        }
-
-        for name in ["weather", "stock", "jokes", "animations"]:
-            proc_mark = "✓" if running.get(name) else "✗"
-            en_label  = "" if feed_cfg[name] else "  (disabled)"
-            print(f"  {proc_mark} {name}{en_label}")
-
-        print()
-        with _log_lock:
-            recent = list(_log_lines)
-        if recent:
-            hr()
-            for line in recent:
-                print(f"  {line}")
-
-        print()
-        print("  [1] Weather settings")
-        print("  [2] Stock settings")
-        print("  [3] Joke settings")
-        print("  [4] Animation settings")
-        print("  [5] Board URL")
-        print("  [s] Status")
-        print("  [r] Restart all feeds")
-        print("  [c] Clear board queue")
-        print("  [q] Quit  (feeds keep running)")
-
-        cmd = ask()
         if cmd == "1":
             menu_weather(cfg)
         elif cmd == "2":
@@ -556,28 +554,17 @@ def main_menu(cfg):
             menu_animations(cfg)
         elif cmd == "5":
             menu_board(cfg)
-        elif cmd == "s":
-            menu_status()
         elif cmd == "r":
             restart_all()
-            print("  Restarting all feeds...")
-            time.sleep(1)
+            _log("Restarting all feeds")
         elif cmd == "c":
-            try:
-                board_url = cfg.get("board_url", "")
-                req = urllib.request.Request(
-                    f"{board_url}/clear", data=b"{}",
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=5) as r:
-                    json.loads(r.read())
-                print("  Queue cleared.")
-            except Exception as e:
-                print(f"  Failed: {e}")
-            pause()
-        elif cmd in ("q", ""):
+            _do_clear_queue(cfg)
+        elif cmd == "q":
             break
+
+        # Reprint header after any command (or plain Enter)
+        if cmd != "q":
+            _print_compact_header(cfg)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -600,7 +587,7 @@ def main():
     time.sleep(1)
 
     try:
-        main_menu(cfg)
+        main_loop(cfg)
     finally:
         stop_event.set()
         print("\nStopping feeds...")
