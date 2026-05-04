@@ -92,6 +92,9 @@ sleep_start          = None
 last_heartbeat       = None
 _heartbeat_interval  = HEARTBEAT_SECONDS  # doubles each log, resets on wake
 _last_motion_log     = 0   # debounce motion logging
+_msgs_since_clock    = 0   # show clock break after this many messages
+CLOCK_BREAK_EVERY    = 4   # messages between clock breaks
+CLOCK_BREAK_SECS     = 30  # how long to show the clock each break
 
 def pir_active():
     return PIR_ENABLED and pir.value
@@ -535,6 +538,21 @@ while True:
 
     purge_expired()
 
+    # Periodically show the clock even when messages are queued
+    if message_queue and _msgs_since_clock >= CLOCK_BREAK_EVERY:
+        _msgs_since_clock = 0
+        log("Clock break")
+        break_end = time.monotonic() + CLOCK_BREAK_SECS
+        while time.monotonic() < break_end:
+            action = renderers.render_clock()
+            if action == "sleep":
+                asleep      = True
+                sleep_start = time.monotonic()
+                break
+            elif action == "clear":
+                message_queue.clear()
+                break
+
     if message_queue:
         msg = message_queue.pop(0)
         if time.monotonic() >= msg["expires_at"]:
@@ -544,6 +562,7 @@ while True:
         log(f"Displaying [{msg.get('category','')}]: {_msg_summary(msg)}")
         result = renderers.render(msg)
         current_msg = None
+        _msgs_since_clock += 1
         clear_display()
         if result == "sleep":
             log("No motion mid-display — sleeping")
