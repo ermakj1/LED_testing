@@ -107,8 +107,19 @@ class ManagedProcess:
         self.restart_at = 0
 
     def start(self):
-        self.proc = subprocess.Popen(self.cmd, cwd=REPO_DIR)
+        self.proc = subprocess.Popen(
+            self.cmd, cwd=REPO_DIR,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
+        threading.Thread(target=self._read_output, daemon=True).start()
         _log(f"Started {self.name} (pid {self.proc.pid})")
+
+    def _read_output(self):
+        for line in self.proc.stdout:
+            line = line.rstrip()
+            if line:
+                _log(f"[{self.name}] {line}")
 
     def stop(self):
         if self.proc and self.proc.poll() is None:
@@ -145,10 +156,17 @@ class ManagedProcess:
 
 
 _processes: list[ManagedProcess] = []
-_proc_lock = threading.Lock()
+_proc_lock  = threading.Lock()
+_log_lines  = []
+_log_lock   = threading.Lock()
+MAX_LOG     = 8
 
 def _log(msg):
-    print(f"\r[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+    line = f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"
+    with _log_lock:
+        _log_lines.append(line)
+        if len(_log_lines) > MAX_LOG:
+            _log_lines.pop(0)
 
 def _build_processes():
     return [
@@ -507,6 +525,14 @@ def main_menu(cfg):
             proc_mark = "✓" if running.get(name) else "✗"
             en_label  = "" if feed_cfg[name] else "  (disabled)"
             print(f"  {proc_mark} {name}{en_label}")
+
+        print()
+        with _log_lock:
+            recent = list(_log_lines)
+        if recent:
+            hr()
+            for line in recent:
+                print(f"  {line}")
 
         print()
         print("  [1] Weather settings")
