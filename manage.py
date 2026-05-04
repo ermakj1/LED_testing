@@ -220,13 +220,26 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body   = self.rfile.read(length)
         try:
-            event = json.loads(body).get("event", "unknown")
+            payload    = json.loads(body)
+            event      = payload.get("event", "unknown")
+            board_time = payload.get("board_time", "?")
+            recv_time  = datetime.now().strftime("%H:%M:%S")
+            lag        = ""
+            try:
+                from datetime import datetime as _dt
+                bt = _dt.strptime(board_time, "%H:%M:%S")
+                rt = _dt.strptime(recv_time,  "%H:%M:%S")
+                diff = int((rt - bt).total_seconds())
+                if diff >= 0:
+                    lag = f"  lag={diff}s"
+            except Exception:
+                pass
             if event == "person_detected":
-                _log("Motion: woke from sleep")
+                _log(f"Motion: woke from sleep  (board={board_time} recv={recv_time}{lag})")
             elif event == "motion":
-                _log("Motion: active (awake)")
+                _log(f"Motion: active  (board={board_time} recv={recv_time}{lag})")
             else:
-                _log(f"Board event: {event}")
+                _log(f"Board event: {event}  (board={board_time} recv={recv_time})")
         except Exception:
             pass
         self.send_response(200)
