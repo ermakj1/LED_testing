@@ -35,9 +35,10 @@ PANEL_WIDTH  = 64
 PANEL_HEIGHT = 32
 MAX_QUEUE    = 20
 DEFAULT_TTL_MINUTES   = 60
-SLEEP_TIMEOUT_SECONDS = 300   # 5 minutes of no motion → sleep
-PIR_ENABLED           = True  # set False if PIR sensor is not connected
-HEARTBEAT_SECONDS     = 60    # log a heartbeat this often while sleeping
+SLEEP_TIMEOUT_SECONDS      = 300   # 5 minutes of no motion → sleep
+PIR_ENABLED                = True  # set False if PIR sensor is not connected
+HEARTBEAT_SECONDS          = 60    # log a heartbeat this often while sleeping
+PRESENCE_HEARTBEAT_MINUTES = 5     # send "motion" callback this often while room is occupied
 LOG_MAX_LINES         = 100
 # Buttons: UP wakes from sleep / skips message. DOWN sleeps immediately.
 
@@ -92,9 +93,10 @@ sleep_start          = None
 last_heartbeat       = None
 _heartbeat_interval  = HEARTBEAT_SECONDS  # doubles each log, resets on wake
 
-_msgs_since_clock    = 0   # show clock break after this many messages
-CLOCK_BREAK_EVERY    = 4   # messages between clock breaks
-CLOCK_BREAK_SECS     = 30  # how long to show the clock each break
+_msgs_since_clock        = 0    # show clock break after this many messages
+CLOCK_BREAK_EVERY        = 4    # messages between clock breaks
+CLOCK_BREAK_SECS         = 30   # how long to show the clock each break
+_last_presence_heartbeat = 0    # last time we sent the presence callback
 
 def pir_active():
     return PIR_ENABLED and pir.value
@@ -438,12 +440,7 @@ if not PIR_ENABLED:
 
 # --- Renderers init ---
 
-def _on_motion_awake(board_time):
-    log("Motion detected")
-    notify_callback("motion", board_time)
-
-renderers.init(display, server, pir, btn_up, btn_down, last_motion_ref, SLEEP_TIMEOUT_SECONDS,
-               on_motion=_on_motion_awake)
+renderers.init(display, server, pir, btn_up, btn_down, last_motion_ref, SLEEP_TIMEOUT_SECONDS)
 
 # --- Helpers ---
 
@@ -494,6 +491,14 @@ while True:
                 time.sleep(0.3)
         last_motion_ref[0] = time.monotonic()
 
+    # Presence heartbeat — fire "motion" callback periodically while room is occupied
+    if not asleep and PIR_ENABLED:
+        now = time.monotonic()
+        if (now - last_motion_ref[0] < SLEEP_TIMEOUT_SECONDS and
+                now - _last_presence_heartbeat >= PRESENCE_HEARTBEAT_MINUTES * 60):
+            _last_presence_heartbeat = now
+            log("Presence heartbeat")
+            notify_callback("motion")
 
     if PIR_ENABLED and not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
         log(f"No motion for {SLEEP_TIMEOUT_SECONDS}s — sleeping")
