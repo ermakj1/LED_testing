@@ -12,7 +12,7 @@ def single_instance(name):
             os.kill(pid, 0)  # raises if process is gone
             print(f"{name} already running (pid {pid}) — exiting")
             sys.exit(0)
-        except (ProcessLookupError, OSError, ValueError):
+        except (ProcessLookupError, OSError, ValueError, SystemError):
             pass  # stale lock, overwrite it
 
     lock_path.write_text(str(os.getpid()))
