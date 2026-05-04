@@ -92,6 +92,7 @@ sleep_start          = None
 last_heartbeat       = None
 _heartbeat_interval  = HEARTBEAT_SECONDS  # doubles each log, resets on wake
 _last_motion_log     = 0   # debounce motion logging
+_last_motion_notify  = 0   # last time we sent a motion callback (awake)
 _msgs_since_clock    = 0   # show clock break after this many messages
 CLOCK_BREAK_EVERY    = 4   # messages between clock breaks
 CLOCK_BREAK_SECS     = 30  # how long to show the clock each break
@@ -484,13 +485,17 @@ while True:
             elif result == "clear":
                 message_queue.clear()
                 time.sleep(0.3)
-        now = time.monotonic()
-        last_motion_ref[0] = now
+        last_motion_ref[0] = time.monotonic()
+
+    # Fire motion callback/log when last_motion_ref was updated recently (catches
+    # pulses that _poll() inside renderers saw but the main loop missed)
+    now = time.monotonic()
+    if not asleep and now - last_motion_ref[0] < 2.0 and now - _last_motion_notify >= 10:
+        _last_motion_notify = now
         if now - _last_motion_log >= 10:
             _last_motion_log = now
-            if not asleep:
-                log("Motion detected")
-                notify_callback("motion")
+            log("Motion detected")
+        notify_callback("motion")
 
     if PIR_ENABLED and not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
         log(f"No motion for {SLEEP_TIMEOUT_SECONDS}s — sleeping")
