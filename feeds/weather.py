@@ -113,7 +113,7 @@ def send_all(ttl_minutes):
             condition, high, low, precip = fetch_weather(city)
             short_name = city["name"].split(",")[0].strip() if multi_city else None
             result = post_to_board(board_url, condition, high, low, precip, ttl_minutes, city=short_name)
-            log(f"{city['name']}: {condition}  H:{high}  L:{low}  precip:{precip}%  → {result}")
+            log(f"{city['name']}: {condition}  H:{high}  L:{low}  precip:{precip}%  -> {result}")
         except Exception as e:
             log(f"{city['name']}: Error — {e}")
             log(traceback.format_exc().strip())

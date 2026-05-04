@@ -107,10 +107,12 @@ class ManagedProcess:
         self.restart_at = 0
 
     def start(self):
+        env = os.environ.copy()
+        env["PYTHONUTF8"] = "1"
         self.proc = subprocess.Popen(
             self.cmd, cwd=REPO_DIR,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
+            text=True, bufsize=1, encoding="utf-8", env=env,
         )
         threading.Thread(target=self._read_output, daemon=True).start()
         _log(f"Started {self.name} (pid {self.proc.pid})")

@@ -98,7 +98,7 @@ def send_all(ttl_minutes):
                 log(f"{symbol}: market closed — skipping")
                 continue
             result = post_to_board(board_url, symbol, price, change, ttl_minutes)
-            log(f"{symbol}  ${price:.2f}  {change:+.2f}%  → {result}")
+            log(f"{symbol}  ${price:.2f}  {change:+.2f}%  -> {result}")
         except Exception as e:
             log(f"{symbol}: Error — {e}")
             log(traceback.format_exc().strip())
