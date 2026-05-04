@@ -13,10 +13,12 @@ import json
 import os
 import sys
 import time
+import socket
 import subprocess
 import threading
 import urllib.request
 import urllib.parse
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from datetime import datetime
 
@@ -27,7 +29,9 @@ RESTART_DELAY = 5
 ALL_ANIM_TYPES = ["fireworks", "rainbow", "plasma", "fire", "life", "cube", "dvd", "dvd_text", "matrix"]
 
 DEFAULT_CONFIG = {
-    "board_url": "http://matrixportal.local:8080",
+    "board_url":       "http://matrixportal.local:8080",
+    "callback_port":   8090,
+    "callback_host":   "",
     "weather": {
         "interval_minutes": 30,
         "enabled": True,
@@ -173,6 +177,57 @@ def restart_all():
     with _proc_lock:
         for p in _processes:
             p.restart()
+
+# ── Callback server ───────────────────────────────────────────────────────────
+
+def _local_ip():
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+
+class _CallbackHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body   = self.rfile.read(length)
+        try:
+            event = json.loads(body).get("event", "unknown")
+            _log(f"Board event: {event}")
+        except Exception:
+            pass
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"ok":true}')
+
+    def log_message(self, *_):
+        pass
+
+def _start_callback_server(cfg):
+    port = int(cfg.get("callback_port", 8090))
+    try:
+        server = HTTPServer(("0.0.0.0", port), _CallbackHandler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        host = cfg.get("callback_host") or _local_ip()
+        _log(f"Callback server listening on port {port}")
+        return f"http://{host}:{port}/"
+    except OSError as e:
+        _log(f"Could not start callback server: {e}")
+        return None
+
+def _board_register(cfg, callback_url):
+    board_url = cfg.get("board_url", "")
+    try:
+        req = urllib.request.Request(
+            f"{board_url}/register",
+            data=json.dumps({"url": callback_url}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5):
+            pass
+        _log(f"Registered callback: {callback_url}")
+    except Exception as e:
+        _log(f"Callback registration failed (will retry on next board wake): {e}")
 
 # ── Menu helpers ──────────────────────────────────────────────────────────────
 
@@ -510,6 +565,10 @@ def main():
 
     stop_event = threading.Event()
     threading.Thread(target=_manager_loop, args=(stop_event,), daemon=True).start()
+
+    callback_url = _start_callback_server(cfg)
+    if callback_url:
+        _board_register(cfg, callback_url)
 
     print("Starting feeds...", flush=True)
     time.sleep(1)

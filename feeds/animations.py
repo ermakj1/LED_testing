@@ -18,8 +18,12 @@ import random
 import argparse
 import urllib.request
 from pathlib import Path
+from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
 from util import single_instance
+
+def log(msg):
+    print(f"{datetime.now().strftime('%H:%M:%S')}  {msg}", flush=True)
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
@@ -76,11 +80,11 @@ def main():
                 board_url = get_board_url()
                 chosen    = args.type or random.choice(get_types())
                 result    = send_animation(board_url, chosen, args.duration)
-                print(f"Sent {chosen} ({args.duration}s): {result}")
+                log(f"Sent {chosen} ({args.duration}s): {result}")
             except Exception as e:
-                print(f"Error: {e}")
+                log(f"Error: {e}")
         else:
-            print("Animations disabled — sleeping")
+            log("Animations disabled — sleeping")
 
         if args.once:
             break

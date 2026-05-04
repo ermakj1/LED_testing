@@ -17,8 +17,12 @@ import argparse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
 from util import single_instance
+
+def log(msg):
+    print(f"{datetime.now().strftime('%H:%M:%S')}  {msg}", flush=True)
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
@@ -83,19 +87,19 @@ def send_all(ttl_minutes):
 
     hour = datetime.now().hour
     if market_hours_only and not (9 <= hour < 17):
-        print("Outside market hours — skipping")
+        log("Outside market hours — skipping")
         return
 
     for symbol in symbols:
         try:
             price, change, market_state = fetch_quote(symbol)
             if market_state == "CLOSED":
-                print(f"{symbol}: market closed — skipping")
+                log(f"{symbol}: market closed — skipping")
                 continue
             result = post_to_board(board_url, symbol, price, change, ttl_minutes)
-            print(f"{symbol}  ${price:.2f}  {change:+.2f}%  → {result}")
+            log(f"{symbol}  ${price:.2f}  {change:+.2f}%  → {result}")
         except Exception as e:
-            print(f"{symbol}: Error — {e}")
+            log(f"{symbol}: Error — {e}")
 
 def main():
     single_instance("stock")
@@ -109,7 +113,7 @@ def main():
         if is_enabled():
             send_all(ttl_minutes=interval)
         else:
-            print("Stock disabled — sleeping")
+            log("Stock disabled — sleeping")
         if args.once:
             break
         time.sleep(interval * 60)

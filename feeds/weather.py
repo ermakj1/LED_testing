@@ -17,8 +17,12 @@ import json
 import argparse
 import urllib.request
 from pathlib import Path
+from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
 from util import single_instance
+
+def log(msg):
+    print(f"{datetime.now().strftime('%H:%M:%S')}  {msg}", flush=True)
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
@@ -104,9 +108,9 @@ def send_all(ttl_minutes):
         try:
             condition, high, low, precip = fetch_weather(city)
             result = post_to_board(board_url, condition, high, low, precip, ttl_minutes)
-            print(f"{city['name']}: {condition}  H:{high}  L:{low}  precip:{precip}%  → {result}")
+            log(f"{city['name']}: {condition}  H:{high}  L:{low}  precip:{precip}%  → {result}")
         except Exception as e:
-            print(f"{city['name']}: Error — {e}")
+            log(f"{city['name']}: Error — {e}")
 
 def main():
     single_instance("weather")
@@ -120,7 +124,7 @@ def main():
         if is_enabled():
             send_all(interval + 5)
         else:
-            print("Weather disabled — sleeping")
+            log("Weather disabled — sleeping")
         if args.once:
             break
         time.sleep(interval * 60)

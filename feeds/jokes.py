@@ -17,8 +17,12 @@ import json
 import argparse
 import urllib.request
 from pathlib import Path
+from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
 from util import single_instance
+
+def log(msg):
+    print(f"{datetime.now().strftime('%H:%M:%S')}  {msg}", flush=True)
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
 
@@ -67,10 +71,10 @@ def send_one():
     joke      = fetch_joke()
     if joke["type"] == "twopart":
         post_joke(board_url, setup=joke["setup"], delivery=joke["delivery"])
-        print(f"Joke: {joke['setup']} / {joke['delivery']}")
+        log(f"Joke: {joke['setup']} / {joke['delivery']}")
     else:
         post_joke(board_url, text=joke["joke"])
-        print(f"Joke: {joke['joke']}")
+        log(f"Joke: {joke['joke']}")
 
 def main():
     single_instance("jokes")
@@ -85,9 +89,9 @@ def main():
             try:
                 send_one()
             except Exception as e:
-                print(f"Error: {e}")
+                log(f"Error: {e}")
         else:
-            print("Jokes disabled — sleeping")
+            log("Jokes disabled — sleeping")
 
         if args.once:
             break
