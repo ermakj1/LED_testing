@@ -2,7 +2,7 @@
 #
 # POST /add      category-specific JSON payload (see send_message.py)
 # POST /clear    clears the queue
-# POST /register {"url": "..."} — openclaw self-registration
+# POST /register {"url": "..."} — register callback URL for board events
 # GET  /         returns current queue as JSON
 #
 # UP button: skip current message
@@ -122,19 +122,19 @@ mdns_server.advertise_service(service_type="_http", protocol="_tcp", port=80)
 
 server = Server(pool)
 
-# --- Outbound (notify openclaw) ---
+# --- Outbound (event callbacks) ---
 
 _rm = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
 _requests = adafruit_requests.Session(_rm, adafruit_connection_manager.get_radio_ssl_context(wifi.radio))
 callback_url = None
 
-def notify_openclaw(event):
+def notify_callback(event):
     if not callback_url:
         return
     try:
         _requests.post(callback_url, json={"event": event})
     except Exception as e:
-        log(f"notify_openclaw failed: {e}")
+        log(f"Callback failed: {e}")
 
 # --- Message queue ---
 
@@ -473,7 +473,7 @@ while True:
             log(f"Motion detected — waking up (slept {slept}s)")
             asleep      = False
             sleep_start = None
-            notify_openclaw("person_detected")
+            notify_callback("person_detected")
             result = renderers.render_greeting(greeting_text())
             clear_display()
             if result == "sleep":
@@ -508,7 +508,7 @@ while True:
             asleep = False
             sleep_start = None
             last_motion_ref[0] = time.monotonic()
-            notify_openclaw("person_detected")
+            notify_callback("person_detected")
             result = renderers.render_greeting(greeting_text())
             clear_display()
             if result == "clear":
