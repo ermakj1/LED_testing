@@ -221,7 +221,12 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         body   = self.rfile.read(length)
         try:
             event = json.loads(body).get("event", "unknown")
-            _log(f"Board event: {event}")
+            if event == "person_detected":
+                _log("Motion: woke from sleep")
+            elif event == "motion":
+                _log("Motion: active (awake)")
+            else:
+                _log(f"Board event: {event}")
         except Exception:
             pass
         self.send_response(200)

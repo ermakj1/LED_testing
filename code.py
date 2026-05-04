@@ -490,6 +490,7 @@ while True:
             _last_motion_log = now
             if not asleep:
                 log("Motion detected")
+                notify_callback("motion")
 
     if PIR_ENABLED and not asleep and time.monotonic() - last_motion_ref[0] > SLEEP_TIMEOUT_SECONDS:
         log(f"No motion for {SLEEP_TIMEOUT_SECONDS}s — sleeping")
