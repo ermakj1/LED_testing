@@ -265,7 +265,7 @@ def _print_compact_header(cfg):
     print()
     print("  " + "─" * 56)
     print(status)
-    print("  1:Weather  2:Stock  3:Jokes  4:Anim  5:Board  c:Clear  r:Restart  q:Quit")
+    print("  1:Weather  2:Stock  3:Jokes  4:Anim  5:Board  c:Clear  r:Restart  q:Quit&Stop")
     print("  " + "─" * 56)
 
 def _do_clear_queue(cfg):
@@ -532,7 +532,7 @@ def main_loop(cfg):
     global _cfg_ref, _line_count
     _cfg_ref = cfg
 
-    print("\n  LED Display Manager — log streams below, Enter to refresh controls")
+    print("\n  LED Display Manager — log streams below, Enter to refresh, q to quit and stop all feeds")
     _print_compact_header(cfg)
 
     while True:
@@ -544,16 +544,23 @@ def main_loop(cfg):
         except (KeyboardInterrupt, EOFError):
             break
 
-        if cmd == "1":
+        if cmd == "":
+            _print_compact_header(cfg)
+        elif cmd == "1":
             menu_weather(cfg)
+            _print_compact_header(cfg)
         elif cmd == "2":
             menu_stock(cfg)
+            _print_compact_header(cfg)
         elif cmd == "3":
             menu_jokes(cfg)
+            _print_compact_header(cfg)
         elif cmd == "4":
             menu_animations(cfg)
+            _print_compact_header(cfg)
         elif cmd == "5":
             menu_board(cfg)
+            _print_compact_header(cfg)
         elif cmd == "r":
             restart_all()
             _log("Restarting all feeds")
@@ -561,10 +568,6 @@ def main_loop(cfg):
             _do_clear_queue(cfg)
         elif cmd == "q":
             break
-
-        # Reprint header after any command (or plain Enter)
-        if cmd != "q":
-            _print_compact_header(cfg)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
