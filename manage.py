@@ -125,11 +125,16 @@ class ManagedProcess:
 
     def stop(self):
         if self.proc and self.proc.poll() is None:
-            self.proc.terminate()
+            self.proc.kill()
             try:
-                self.proc.wait(timeout=5)
+                self.proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
-                self.proc.kill()
+                pass
+        if self.proc:
+            try:
+                self.proc.stdout.close()
+            except Exception:
+                pass
         self.proc = None
 
     def restart(self):
@@ -596,9 +601,8 @@ def main():
     finally:
         stop_event.set()
         print("\nStopping feeds...")
-        with _proc_lock:
-            for p in _processes:
-                p.stop()
+        for p in _processes:
+            p.stop()
         print("Done.")
 
 if __name__ == "__main__":
