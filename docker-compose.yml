@@ -9,7 +9,6 @@ services:
       - ~/homeassistant:/config
     ports:
       - "8123:8123"
-    network_mode: host
 
   manage:
     build: .
@@ -22,4 +21,6 @@ services:
       - ./feeds/config.json:/app/feeds/config.json
     ports:
       - "8090:8090"
-    network_mode: host
+      - "8099:8099"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
