@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LED Display Manager</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0f172a;
+  --surface:  #1e293b;
+  --surface2: #273548;
+  --border:   #334155;
+  --text:     #f1f5f9;
+  --muted:    #94a3b8;
+  --primary:  #3b82f6;
+  --success:  #22c55e;
+  --warning:  #f59e0b;
+  --danger:   #ef4444;
+  --orange:   #f97316;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* ── Header ── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.header-title {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--primary);
+}
+#feed-status {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+.feed-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+}
+.feed-pill .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.feed-pill.running .dot  { background: var(--success); }
+.feed-pill.disabled .dot { background: var(--border); }
+.feed-pill.stopped .dot  { background: var(--danger); }
+.header-actions { display: flex; gap: 8px; }
+
+/* ── Buttons ── */
+.btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+.btn:hover { opacity: 0.85; }
+.btn:active { opacity: 0.7; }
+.btn-primary  { background: var(--primary); color: #fff; }
+.btn-success  { background: var(--success); color: #fff; }
+.btn-danger   { background: var(--danger);  color: #fff; }
+.btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-xs { padding: 3px 8px; font-size: 12px; }
+.btn-full { width: 100%; margin-top: 12px; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Main layout ── */
+.main-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Log panel ── */
+.log-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+.log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.log-toolbar-left { display: flex; align-items: center; gap: 8px; }
+.log-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+#log-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  background: #0a0f1e;
+}
+.log-line {
+  padding: 1px 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.log-line:hover { background: rgba(255,255,255,0.03); }
+.log-motion  { color: var(--orange); }
+.log-ha      { color: var(--success); }
+.log-error   { color: var(--danger); }
+.log-start   { color: var(--primary); }
+.log-default { color: #c8d4e8; }
+
+/* ── Config panel ── */
+.config-panel {
+  width: 360px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tabs {
+  display: flex;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tab {
+  flex: 1;
+  padding: 10px 4px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: color 0.15s;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tab-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: none;
+}
+.tab-content.active { display: block; }
+
+/* ── Form elements ── */
+.field { margin-bottom: 14px; }
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+input[type=text], input[type=number], input[type=url] {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+input:focus { border-color: var(--primary); }
+input[type=number] { width: 80px; }
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.toggle-label { font-weight: 500; }
+
+.switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--border);
+  border-radius: 99px;
+  transition: background 0.2s;
+}
+.slider::before {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  left: 3px; top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+input:checked + .slider { background: var(--primary); }
+input:checked + .slider::before { transform: translateX(18px); }
+
+/* ── Lists (cities / symbols) ── */
+.list-section { margin-bottom: 14px; }
+.list-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+.list-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty-msg { color: var(--muted); font-size: 12px; font-style: italic; padding: 4px 0; }
+
+/* ── Add row ── */
+.add-row { display: flex; gap: 6px; margin-bottom: 8px; }
+.add-row input { flex: 1; }
+
+/* ── City search results ── */
+#city-results {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.city-result {
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.city-result:last-child { border-bottom: none; }
+.city-result:hover { background: var(--surface); }
+
+/* ── Checkboxes (animation types) ── */
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.check-item input[type=checkbox] { accent-color: var(--primary); width: 14px; height: 14px; }
+
+/* ── Interval row ── */
+.interval-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.interval-row label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.interval-row span  { font-size: 12px; color: var(--muted); }
+
+/* ── Toast ── */
+#toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+  z-index: 100;
+}
+#toast.show { opacity: 1; }
+#toast.ok  { background: var(--success); color: #fff; }
+#toast.err { background: var(--danger);  color: #fff; }
+
+/* ── Divider ── */
+.divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-title">&#11042; LED Display Manager</div>
+  <div id="feed-status"></div>
+  <div class="header-actions">
+    <button class="btn btn-secondary" onclick="apiAction('restart_all')">&#8635; Restart All</button>
+    <button class="btn btn-danger"    onclick="apiAction('clear_queue')">&#10005; Clear Queue</button>
+  </div>
+</header>
+
+<div class="main-layout">
+
+  <!-- Log panel -->
+  <div class="log-panel">
+    <div class="log-toolbar">
+      <div class="log-toolbar-left">
+        <span class="log-title">Live Log</span>
+        <span id="log-status" style="font-size:11px;color:var(--muted)">connecting...</span>
+      </div>
+      <button id="scroll-resume" class="btn btn-xs btn-secondary" onclick="resumeScroll()" style="display:none">&#8595; Resume</button>
+    </div>
+    <div id="log-container">
+      <div id="log-lines"></div>
+    </div>
+  </div>
+
+  <!-- Config panel -->
+  <div class="config-panel">
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('weather')">Weather</button>
+      <button class="tab"        onclick="showTab('stock')">Stock</button>
+      <button class="tab"        onclick="showTab('jokes')">Jokes</button>
+      <button class="tab"        onclick="showTab('animations')">Anims</button>
+      <button class="tab"        onclick="showTab('board')">Board</button>
+    </div>
+    <div class="tab-content active" id="tab-weather"><p style="color:var(--muted)">Loading...</p></div>
+    <div class="tab-content"        id="tab-stock"></div>
+    <div class="tab-content"        id="tab-jokes"></div>
+    <div class="tab-content"        id="tab-animations"></div>
+    <div class="tab-content"        id="tab-board"></div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let cfg = null;
+let currentTab = 'weather';
+let autoScroll = true;
+
+const ALL_ANIM_TYPES = ['fireworks','rainbow','plasma','fire','life','cube','dvd','dvd_text','matrix'];
+
+// ── Log streaming ──────────────────────────────────────────────────────────
+function connectLogs() {
+  const es = new EventSource('/api/logs');
+  const statusEl = document.getElementById('log-status');
+  statusEl.textContent = 'connected';
+  statusEl.style.color = 'var(--success)';
+
+  es.onmessage = e => appendLog(JSON.parse(e.data));
+  es.onerror = () => {
+    statusEl.textContent = 'reconnecting...';
+    statusEl.style.color = 'var(--warning)';
+    es.close();
+    setTimeout(connectLogs, 3000);
+  };
+}
+
+function logClass(line) {
+  const l = line.toLowerCase();
+  if (l.includes('motion:'))                               return 'log-motion';
+  if (l.includes('ha notified') || l.includes('ha notify')) return 'log-ha';
+  if (l.includes('error') || l.includes('failed') || l.includes('econnaborted')) return 'log-error';
+  if (l.includes('started ') || l.includes('registered'))  return 'log-start';
+  return 'log-default';
+}
+
+function appendLog(line) {
+  const container = document.getElementById('log-container');
+  const lines     = document.getElementById('log-lines');
+  const div = document.createElement('div');
+  div.className = 'log-line ' + logClass(line);
+  div.textContent = line;
+  lines.appendChild(div);
+
+  // cap at 1000 lines
+  while (lines.children.length > 1000) lines.removeChild(lines.firstChild);
+
+  if (autoScroll) container.scrollTop = container.scrollHeight;
+}
+
+function resumeScroll() {
+  autoScroll = true;
+  document.getElementById('scroll-resume').style.display = 'none';
+  const container = document.getElementById('log-container');
+  container.scrollTop = container.scrollHeight;
+}
+
+document.getElementById('log-container').addEventListener('scroll', function() {
+  const atBottom = this.scrollHeight - this.scrollTop - this.clientHeight < 40;
+  autoScroll = atBottom;
+  document.getElementById('scroll-resume').style.display = atBottom ? 'none' : '';
+});
+
+// ── Status polling ─────────────────────────────────────────────────────────
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    renderStatus(d.feeds);
+  } catch (_) {}
+}
+
+function renderStatus(feeds) {
+  const el = document.getElementById('feed-status');
+  el.innerHTML = feeds.map(f => {
+    const cls = !f.enabled ? 'disabled' : f.running ? 'running' : 'stopped';
+    return `<div class="feed-pill ${cls}"><span class="dot"></span>${f.name}</div>`;
+  }).join('');
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function showTab(name) {
+  currentTab = name;
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    const tabs = ['weather','stock','jokes','animations','board'];
+    t.classList.toggle('active', tabs[i] === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  renderTab(name);
+}
+
+async function loadConfig() {
+  const r = await fetch('/api/config');
+  cfg = await r.json();
+  renderTab(currentTab);
+}
+
+function renderTab(name) {
+  if (!cfg) return;
+  const fns = {weather: renderWeather, stock: renderStock, jokes: renderJokes, animations: renderAnimations, board: renderBoard};
+  if (fns[name]) fns[name]();
+}
+
+// ── Weather tab ────────────────────────────────────────────────────────────
+function renderWeather() {
+  const w = cfg.weather || {};
+  const cities = w.cities || [];
+  const el = document.getElementById('tab-weather');
+  el.innerHTML = `
+    <div class="toggle-row">
+      <span class="toggle-label">Enabled</span>
+      <label class="switch"><input type="checkbox" id="w-enabled" ${w.enabled !== false ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
+    <div class="interval-row">
+      <label>Update every</label>
+      <input type="number" id="w-interval" value="${w.interval_minutes || 30}" min="1" max="360">
+      <span>minutes</span>
+    </div>
+    <div class="list-section">
+      <div class="list-section-title">Cities</div>
+      <div id="w-city-list">
+        ${cities.length ? cities.map((c,i) => `
+          <div class="list-item">
+            <span title="${c.lat}, ${c.lon}">${c.name}</span>
+            <button class="btn btn-xs btn-danger" onclick="removeCity(${i})">&#10005;</button>
+          </div>`).join('') : '<p class="empty-msg">No cities added</p>'}
+      </div>
+    </div>
+    <div class="list-section">
+      <div class="list-section-title">Add City</div>
+      <div class="add-row">
+        <input type="text" id="w-city-search" placeholder="e.g. Seattle or Tokyo" onkeydown="if(event.key==='Enter')searchCity()">
+        <button class="btn btn-primary" onclick="searchCity()">Search</button>
+      </div>
+      <div id="city-results"></div>
+    </div>
+    <button class="btn btn-success btn-full" onclick="saveWeather()">Save Weather Settings</button>
+  `;
+}
+
+function removeCity(i) {
+  cfg.weather.cities.splice(i, 1);
+  renderWeather();
+}
+
+async function searchCity() {
+  const q = document.getElementById('w-city-search').value.trim();
+  if (!q) return;
+  const resultsEl = document.getElementById('city-results');
+  resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;padding:6px">Searching...</p>';
+  const r = await fetch('/api/geocode', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({query: q})});
+  const d = await r.json();
+  if (!d.results.length) {
+    resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;padding:6px">No results found</p>';
+    return;
+  }
+  resultsEl.innerHTML = d.results.map((c, i) =>
+    `<div class="city-result" onclick="addCity(${i})" data-idx="${i}">${c.name}</div>`
+  ).join('');
+  resultsEl._results = d.results;
+}
+
+function addCity(i) {
+  const city = document.getElementById('city-results')._results[i];
+  cfg.weather.cities = cfg.weather.cities || [];
+  cfg.weather.cities.push(city);
+  document.getElementById('w-city-search').value = '';
+  document.getElementById('city-results').innerHTML = '';
+  renderWeather();
+  toast('City added — save to apply', 'ok');
+}
+
+async function saveWeather() {
+  cfg.weather.enabled          = document.getElementById('w-enabled').checked;
+  cfg.weather.interval_minutes = parseInt(document.getElementById('w-interval').value) || 30;
+  await saveSection('weather', cfg.weather);
+}
+
+// ── Stock tab ──────────────────────────────────────────────────────────────
+function renderStock() {
+  const s = cfg.stock || {};
+  const symbols = s.symbols || [];
+  document.getElementById('tab-stock').innerHTML = `
+    <div class="toggle-row">
+      <span class="toggle-label">Enabled</span>
+      <label class="switch"><input type="checkbox" id="s-enabled" ${s.enabled !== false ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Market hours only</span>
+      <label class="switch"><input type="checkbox" id="s-mkt" ${s.market_hours_only !== false ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
+    <div class="interval-row">
+      <label>Update every</label>
+      <input type="number" id="s-interval" value="${s.interval_minutes || 5}" min="1" max="60">
+      <span>minutes</span>
+    </div>
+    <div class="list-section">
+      <div class="list-section-title">Symbols</div>
+      <div id="s-sym-list">
+        ${symbols.length ? symbols.map((sym,i) => `
+          <div class="list-item">
+            <span>${sym}</span>
+            <button class="btn btn-xs btn-danger" onclick="removeSymbol(${i})">&#10005;</button>
+          </div>`).join('') : '<p class="empty-msg">No symbols added</p>'}
+      </div>
+    </div>
+    <div class="add-row">
+      <input type="text" id="s-sym-input" placeholder="e.g. AAPL" onkeydown="if(event.key==='Enter')addSymbol()">
+      <button class="btn btn-primary" onclick="addSymbol()">Add</button>
+    </div>
+    <button class="btn btn-success btn-full" onclick="saveStock()">Save Stock Settings</button>
+  `;
+}
+
+function removeSymbol(i) {
+  cfg.stock.symbols.splice(i, 1);
+  renderStock();
+}
+
+function addSymbol() {
+  const sym = (document.getElementById('s-sym-input').value || '').trim().toUpperCase();
+  if (!sym) return;
+  cfg.stock.symbols = cfg.stock.symbols || [];
+  if (!cfg.stock.symbols.includes(sym)) cfg.stock.symbols.push(sym);
+  document.getElementById('s-sym-input').value = '';
+  renderStock();
+  toast('Symbol added — save to apply', 'ok');
+}
+
+async function saveStock() {
+  cfg.stock.enabled           = document.getElementById('s-enabled').checked;
+  cfg.stock.market_hours_only = document.getElementById('s-mkt').checked;
+  cfg.stock.interval_minutes  = parseInt(document.getElementById('s-interval').value) || 5;
+  await saveSection('stock', cfg.stock);
+}
+
+// ── Jokes tab ──────────────────────────────────────────────────────────────
+function renderJokes() {
+  const j = cfg.jokes || {};
+  document.getElementById('tab-jokes').innerHTML = `
+    <div class="toggle-row">
+      <span class="toggle-label">Enabled</span>
+      <label class="switch"><input type="checkbox" id="j-enabled" ${j.enabled !== false ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
+    <div class="interval-row">
+      <label>Update every</label>
+      <input type="number" id="j-interval" value="${j.interval_minutes || 30}" min="1" max="360">
+      <span>minutes</span>
+    </div>
+    <button class="btn btn-success btn-full" onclick="saveJokes()">Save Joke Settings</button>
+  `;
+}
+
+async function saveJokes() {
+  cfg.jokes.enabled          = document.getElementById('j-enabled').checked;
+  cfg.jokes.interval_minutes = parseInt(document.getElementById('j-interval').value) || 30;
+  await saveSection('jokes', cfg.jokes);
+}
+
+// ── Animations tab ─────────────────────────────────────────────────────────
+function renderAnimations() {
+  const a = cfg.animations || {};
+  const active = a.types || [];
+  document.getElementById('tab-animations').innerHTML = `
+    <div class="toggle-row">
+      <span class="toggle-label">Enabled</span>
+      <label class="switch"><input type="checkbox" id="a-enabled" ${a.enabled !== false ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
+    <div class="interval-row">
+      <label>Update every</label>
+      <input type="number" id="a-interval" value="${a.interval_minutes || 20}" min="1" max="360">
+      <span>minutes</span>
+    </div>
+    <div class="list-section">
+      <div class="list-section-title">Animation Types</div>
+      <div class="checkbox-grid">
+        ${ALL_ANIM_TYPES.map(t => `
+          <label class="check-item">
+            <input type="checkbox" name="anim-type" value="${t}" ${active.includes(t) ? 'checked' : ''}>
+            ${t}
+          </label>`).join('')}
+      </div>
+    </div>
+    <button class="btn btn-success btn-full" onclick="saveAnimations()">Save Animation Settings</button>
+  `;
+}
+
+async function saveAnimations() {
+  cfg.animations.enabled          = document.getElementById('a-enabled').checked;
+  cfg.animations.interval_minutes = parseInt(document.getElementById('a-interval').value) || 20;
+  cfg.animations.types = [...document.querySelectorAll('input[name=anim-type]:checked')].map(el => el.value);
+  await saveSection('animations', cfg.animations);
+}
+
+// ── Board tab ──────────────────────────────────────────────────────────────
+function renderBoard() {
+  const b = cfg;
+  document.getElementById('tab-board').innerHTML = `
+    <div class="field">
+      <label>Board URL</label>
+      <input type="text" id="b-url" value="${b.board_url || ''}" placeholder="http://matrixportal.local:8080">
+    </div>
+    <div class="field">
+      <label>HA Webhook URL</label>
+      <input type="text" id="b-ha" value="${b.ha_webhook_motion || ''}" placeholder="http://localhost:8123/api/webhook/...">
+    </div>
+    <div class="field">
+      <label>Callback Host (override)</label>
+      <input type="text" id="b-cbhost" value="${b.callback_host || ''}" placeholder="auto-detect">
+    </div>
+    <button class="btn btn-success btn-full" onclick="saveBoard()">Save Board Settings</button>
+  `;
+}
+
+async function saveBoard() {
+  await saveSection('board', {
+    board_url:         document.getElementById('b-url').value.trim(),
+    ha_webhook_motion: document.getElementById('b-ha').value.trim(),
+    callback_host:     document.getElementById('b-cbhost').value.trim(),
+  });
+}
+
+// ── API helpers ────────────────────────────────────────────────────────────
+async function saveSection(section, data) {
+  try {
+    const r = await fetch(`/api/config/${section}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast('Saved!', 'ok');
+      await loadConfig();
+    } else {
+      toast('Save failed: ' + (d.reason || '?'), 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
+}
+
+async function apiAction(action) {
+  try {
+    const r = await fetch(`/api/actions/${action}`, {method: 'POST'});
+    const d = await r.json();
+    toast(d.ok ? 'Done!' : 'Failed', d.ok ? 'ok' : 'err');
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+let _toastTimer = null;
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + (type || 'ok');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.className = '', 2500);
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+connectLogs();
+loadConfig();
+pollStatus();
+setInterval(pollStatus, 5000);
+</script>
+</body>
+</html>

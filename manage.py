@@ -1,30 +1,31 @@
 #!/usr/bin/env python3
 """
-Interactive manager for LED display feeds.
+LED Display Manager — feeds + web UI.
 
-Starts all feed scripts as subprocesses and provides a menu to configure
-each feed. Settings are saved to feeds/config.json.
-
-Usage:
-    python manage.py
+Starts feed subprocesses, serves a web management UI on port 8099,
+and handles motion callbacks from the board.
 """
 
 import json
 import os
-import sys
-import time
+import queue as _queue
 import socket
 import subprocess
+import sys
 import threading
-import urllib.request
+import time
 import urllib.parse
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from pathlib import Path
+import urllib.request
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+from flask import Flask, Response, jsonify, request as freq
 
 REPO_DIR      = Path(__file__).parent.resolve()
 CONFIG_PATH   = REPO_DIR / "feeds" / "config.json"
 RESTART_DELAY = 5
+WEB_PORT      = 8099
 
 ALL_ANIM_TYPES = ["fireworks", "rainbow", "plasma", "fire", "life", "cube", "dvd", "dvd_text", "matrix"]
 
@@ -37,23 +38,23 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "cities": [
             {"name": "Kirkland, WA, United States", "lat": 47.6815, "lon": -122.2087, "timezone": "America/Los_Angeles"}
-        ]
+        ],
     },
     "stock": {
         "interval_minutes": 5,
         "enabled": True,
         "market_hours_only": True,
-        "symbols": ["MSFT"]
+        "symbols": ["MSFT"],
     },
     "jokes": {
         "interval_minutes": 30,
-        "enabled": True
+        "enabled": True,
     },
     "animations": {
         "interval_minutes": 20,
         "enabled": True,
-        "types": list(ALL_ANIM_TYPES)
-    }
+        "types": list(ALL_ANIM_TYPES),
+    },
 }
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -71,7 +72,6 @@ def save_config(cfg):
 # ── Geocoding ─────────────────────────────────────────────────────────────────
 
 def geocode(name):
-    """Look up a city by name. Returns list of {name, lat, lon, timezone}."""
     url = (
         "https://geocoding-api.open-meteo.com/v1/search"
         f"?name={urllib.parse.quote(name)}&count=8&language=en&format=json"
@@ -94,8 +94,39 @@ def geocode(name):
             })
         return results
     except Exception as e:
-        print(f"  Geocoding error: {e}")
+        _log(f"Geocoding error: {e}")
         return []
+
+# ── Logging + SSE broadcast ───────────────────────────────────────────────────
+
+_sse_queues       = []
+_sse_lock         = threading.Lock()
+_log_history      = []
+_log_history_lock = threading.Lock()
+LOG_HISTORY_MAX   = 500
+
+_cfg_ref   = None
+_proc_lock = threading.Lock()
+
+def _broadcast(line):
+    with _log_history_lock:
+        _log_history.append(line)
+        if len(_log_history) > LOG_HISTORY_MAX:
+            _log_history.pop(0)
+    with _sse_lock:
+        dead = []
+        for q in _sse_queues:
+            try:
+                q.put_nowait(line)
+            except _queue.Full:
+                dead.append(q)
+        for q in dead:
+            _sse_queues.remove(q)
+
+def _log(msg):
+    line = f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"
+    print(line, flush=True)
+    _broadcast(line)
 
 # ── Process management ────────────────────────────────────────────────────────
 
@@ -154,31 +185,11 @@ class ManagedProcess:
             self.restart_at = time.time() + RESTART_DELAY
 
     @property
-    def status(self):
-        if self.proc is None:
-            return "stopped"
-        if self.proc.poll() is None:
-            return f"running  pid {self.proc.pid}"
-        return f"exited ({self.proc.returncode})"
+    def running(self):
+        return self.proc is not None and self.proc.poll() is None
 
 
-_processes:   list[ManagedProcess] = []
-_proc_lock    = threading.Lock()
-_cfg_ref      = None   # set in main(); lets _log auto-reprint the header
-_line_count   = 0
-_line_lock    = threading.Lock()
-HEADER_EVERY  = 20
-
-def _log(msg):
-    global _line_count
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
-    if _cfg_ref is None:
-        return
-    with _line_lock:
-        _line_count += 1
-        count = _line_count
-    if count % HEADER_EVERY == 0:
-        _print_compact_header(_cfg_ref)
+_processes: list[ManagedProcess] = []
 
 def _build_processes():
     return [
@@ -228,8 +239,7 @@ def _forward_to_ha(event):
     except Exception as e:
         _log(f"HA notify failed: {e}")
 
-
-# ── Callback server ───────────────────────────────────────────────────────────
+# ── Callback server (board → manage.py) ──────────────────────────────────────
 
 def _local_ip():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -279,7 +289,7 @@ def _start_callback_server(cfg):
         server = HTTPServer(("0.0.0.0", port), _CallbackHandler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         host = cfg.get("callback_host") or _local_ip()
-        _log(f"Callback server listening on port {port}")
+        _log(f"Callback server on port {port}")
         return f"http://{host}:{port}/"
     except OSError as e:
         _log(f"Could not start callback server: {e}")
@@ -298,7 +308,7 @@ def _board_register(cfg, callback_url):
             pass
         _log(f"Registered callback: {callback_url}")
     except Exception as e:
-        _log(f"Callback registration failed (will retry on next board wake): {e}")
+        _log(f"Callback registration failed: {e}")
 
 def _board_unregister(cfg):
     board_url = cfg.get("board_url", "")
@@ -315,29 +325,6 @@ def _board_unregister(cfg):
     except Exception:
         pass
 
-# ── Compact header (reprinted in live log stream) ─────────────────────────────
-
-def _print_compact_header(cfg):
-    with _proc_lock:
-        running = {p.name: (p.proc and p.proc.poll() is None) for p in _processes}
-    status = "  " + "   ".join(
-        ("✓" if running.get(n) else "✗") + n +
-        ("(off)" if not cfg.get(n, {}).get("enabled", True) else "")
-        for n in ["weather", "stock", "jokes", "animations"]
-    )
-    print()
-    print("  " + "─" * 56)
-    print(status)
-    print("  [1] Weather settings")
-    print("  [2] Stock settings")
-    print("  [3] Joke settings")
-    print("  [4] Animation settings")
-    print("  [5] Board URL")
-    print("  [c] Clear board queue")
-    print("  [r] Restart all feeds")
-    print("  [q] Quit and stop all feeds")
-    print("  " + "─" * 56)
-
 def _do_clear_queue(cfg):
     board_url = cfg.get("board_url", "")
     try:
@@ -346,315 +333,127 @@ def _do_clear_queue(cfg):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=5) as r:
-            json.loads(r.read())
+        with urllib.request.urlopen(req, timeout=5):
+            pass
         _log("Board queue cleared")
     except Exception as e:
         _log(f"Clear failed: {e}")
 
-# ── Menu helpers ──────────────────────────────────────────────────────────────
+# ── Web server (Flask) ────────────────────────────────────────────────────────
 
-def clear():
-    os.system("cls" if os.name == "nt" else "clear")
+flask_app = Flask(__name__)
 
-def hr():
-    print("  " + "─" * 38)
+@flask_app.route("/")
+def web_index():
+    html_path = REPO_DIR / "ui_manage.html"
+    with open(html_path) as f:
+        return f.read(), 200, {"Content-Type": "text/html; charset=utf-8"}
 
-def header(title):
-    print()
-    hr()
-    print(f"  {title}")
-    hr()
+@flask_app.route("/api/logs")
+def api_logs():
+    client_q = _queue.Queue(maxsize=200)
+    with _log_history_lock:
+        history = list(_log_history)
+    with _sse_lock:
+        _sse_queues.append(client_q)
 
-def ask(text=""):
-    try:
-        return input(f"\n  {text}> ").strip()
-    except (KeyboardInterrupt, EOFError):
-        return "q"
-
-def pause():
-    try:
-        input("\n  Press Enter to continue...")
-    except (KeyboardInterrupt, EOFError):
-        pass
-
-# ── Weather menu ──────────────────────────────────────────────────────────────
-
-def menu_weather(cfg):
-    while True:
-        wcfg     = cfg.setdefault("weather", {})
-        cities   = wcfg.setdefault("cities", [])
-        enabled  = wcfg.get("enabled", True)
-        interval = wcfg.get("interval_minutes", 30)
-
-        header("Weather Settings")
-        print(f"  Status:   {'enabled' if enabled else 'disabled'}")
-        if cities:
-            for i, c in enumerate(cities, 1):
-                print(f"  {i}. {c['name']}")
-        else:
-            print("  (no cities configured)")
-        print(f"\n  Interval: every {interval} min")
-        print("\n  [t] Toggle   [a] Add city   [r] Remove city   [i] Set interval   [b] Back")
-
-        cmd = ask()
-        if cmd in ("b", "q", ""):
-            break
-        elif cmd == "t":
-            wcfg["enabled"] = not enabled
-            save_config(cfg)
-            restart_feed("weather")
-        elif cmd == "a":
-            name = ask("City name (e.g. Seattle or Tokyo)")
-            if not name:
-                continue
-            print("  Searching...", end="", flush=True)
-            results = geocode(name)
-            print()
-            if not results:
-                print("  No results found.")
-                pause()
-                continue
-            for i, r in enumerate(results, 1):
-                print(f"  {i}. {r['name']}  ({r['lat']}, {r['lon']})")
-            choice = ask("Select number (Enter to cancel)")
-            if choice.isdigit() and 1 <= int(choice) <= len(results):
-                city = results[int(choice) - 1]
-                cities.append(city)
-                save_config(cfg)
-                restart_feed("weather")
-                print(f"  Added {city['name']}")
-                pause()
-        elif cmd == "r":
-            if not cities:
-                continue
-            idx = ask("Remove number")
-            if idx.isdigit() and 1 <= int(idx) <= len(cities):
-                removed = cities.pop(int(idx) - 1)
-                save_config(cfg)
-                restart_feed("weather")
-                print(f"  Removed {removed['name']}")
-                pause()
-        elif cmd == "i":
-            val = ask("Interval in minutes")
-            if val.isdigit() and int(val) > 0:
-                wcfg["interval_minutes"] = int(val)
-                save_config(cfg)
-                restart_feed("weather")
-                print(f"  Interval set to {val} min")
-                pause()
-
-# ── Stock menu ────────────────────────────────────────────────────────────────
-
-def menu_stock(cfg):
-    while True:
-        scfg     = cfg.setdefault("stock", {})
-        symbols  = scfg.setdefault("symbols", [])
-        enabled  = scfg.get("enabled", True)
-        interval = scfg.get("interval_minutes", 5)
-        mkt_only = scfg.get("market_hours_only", True)
-
-        header("Stock Settings")
-        print(f"  Status:       {'enabled' if enabled else 'disabled'}")
-        if symbols:
-            for i, s in enumerate(symbols, 1):
-                print(f"  {i}. {s}")
-        else:
-            print("  (no symbols configured)")
-        print(f"\n  Interval:     every {interval} min")
-        print(f"  Market hours: {'9am–5pm only' if mkt_only else 'always on'}")
-        print("\n  [t] Toggle   [a] Add symbol   [r] Remove symbol   [i] Set interval   [m] Toggle market hours   [b] Back")
-
-        cmd = ask()
-        if cmd in ("b", "q", ""):
-            break
-        elif cmd == "t":
-            scfg["enabled"] = not enabled
-            save_config(cfg)
-            restart_feed("stock")
-        elif cmd == "a":
-            sym = ask("Symbol (e.g. AAPL)").upper()
-            if sym and sym not in symbols:
-                symbols.append(sym)
-                save_config(cfg)
-                restart_feed("stock")
-                print(f"  Added {sym}")
-                pause()
-        elif cmd == "r":
-            if not symbols:
-                continue
-            idx = ask("Remove number")
-            if idx.isdigit() and 1 <= int(idx) <= len(symbols):
-                removed = symbols.pop(int(idx) - 1)
-                save_config(cfg)
-                restart_feed("stock")
-                print(f"  Removed {removed}")
-                pause()
-        elif cmd == "i":
-            val = ask("Interval in minutes")
-            if val.isdigit() and int(val) > 0:
-                scfg["interval_minutes"] = int(val)
-                save_config(cfg)
-                restart_feed("stock")
-                print(f"  Interval set to {val} min")
-                pause()
-        elif cmd == "m":
-            scfg["market_hours_only"] = not mkt_only
-            save_config(cfg)
-            restart_feed("stock")
-
-# ── Jokes menu ────────────────────────────────────────────────────────────────
-
-def menu_jokes(cfg):
-    while True:
-        jcfg     = cfg.setdefault("jokes", {})
-        enabled  = jcfg.get("enabled", True)
-        interval = jcfg.get("interval_minutes", 30)
-
-        header("Joke Settings")
-        print(f"  Status:   {'enabled' if enabled else 'disabled'}")
-        print(f"  Interval: every {interval} min")
-        print("\n  [t] Toggle   [i] Set interval   [b] Back")
-
-        cmd = ask()
-        if cmd in ("b", "q", ""):
-            break
-        elif cmd == "t":
-            jcfg["enabled"] = not enabled
-            save_config(cfg)
-            restart_feed("jokes")
-        elif cmd == "i":
-            val = ask("Interval in minutes")
-            if val.isdigit() and int(val) > 0:
-                jcfg["interval_minutes"] = int(val)
-                save_config(cfg)
-                restart_feed("jokes")
-                pause()
-
-# ── Animations menu ───────────────────────────────────────────────────────────
-
-def menu_animations(cfg):
-    while True:
-        acfg     = cfg.setdefault("animations", {})
-        enabled  = acfg.get("enabled", True)
-        interval = acfg.get("interval_minutes", 20)
-        types    = acfg.setdefault("types", list(ALL_ANIM_TYPES))
-
-        header("Animation Settings")
-        print(f"  Status:   {'enabled' if enabled else 'disabled'}")
-        print(f"  Interval: every {interval} min")
-        print(f"  Active:   {', '.join(types) if types else '(none)'}")
-        print("\n  [t] Toggle   [i] Set interval   [e] Edit types   [b] Back")
-
-        cmd = ask()
-        if cmd in ("b", "q", ""):
-            break
-        elif cmd == "t":
-            acfg["enabled"] = not enabled
-            save_config(cfg)
-            restart_feed("animations")
-        elif cmd == "i":
-            val = ask("Interval in minutes")
-            if val.isdigit() and int(val) > 0:
-                acfg["interval_minutes"] = int(val)
-                save_config(cfg)
-                restart_feed("animations")
-                pause()
-        elif cmd == "e":
-            while True:
-                print()
-                for i, t in enumerate(ALL_ANIM_TYPES, 1):
-                    mark = "x" if t in types else " "
-                    print(f"  {i}. [{mark}] {t}")
-                print("\n  Enter number to toggle, Enter when done")
-                val = ask("Toggle")
-                if not val:
-                    break
-                if val.isdigit() and 1 <= int(val) <= len(ALL_ANIM_TYPES):
-                    t = ALL_ANIM_TYPES[int(val) - 1]
-                    if t in types:
-                        types.remove(t)
-                    else:
-                        types.append(t)
-            save_config(cfg)
-            restart_feed("animations")
-
-# ── Board settings ────────────────────────────────────────────────────────────
-
-def menu_board(cfg):
-    header("Board Settings")
-    print(f"  URL: {cfg.get('board_url', '')}")
-    print("\n  [u] Set URL   [b] Back")
-
-    cmd = ask()
-    if cmd == "u":
-        url = ask("Board URL (e.g. http://192.168.1.50:8080)")
-        if url:
-            cfg["board_url"] = url.rstrip("/")
-            save_config(cfg)
-            restart_all()
-            print("  Saved. Restarting all feeds.")
-            pause()
-
-# ── Main loop (live streaming) ────────────────────────────────────────────────
-
-def main_loop(cfg):
-    global _cfg_ref, _line_count
-    _cfg_ref = cfg
-
-    if not sys.stdin.isatty():
-        _log("Running in non-interactive mode (no terminal)")
+    def generate():
         try:
+            for line in history:
+                yield f"data: {json.dumps(line)}\n\n"
             while True:
-                time.sleep(60)
-        except KeyboardInterrupt:
-            pass
-        return
+                try:
+                    line = client_q.get(timeout=20)
+                    yield f"data: {json.dumps(line)}\n\n"
+                except _queue.Empty:
+                    yield ": keepalive\n\n"
+        finally:
+            with _sse_lock:
+                try:
+                    _sse_queues.remove(client_q)
+                except ValueError:
+                    pass
 
-    print("\n  LED Display Manager — log streams below, Enter to refresh, q to quit and stop all feeds")
-    _print_compact_header(cfg)
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
-    while True:
-        with _line_lock:
-            _line_count = 0  # reset so next 20 lines triggers a reprint
+@flask_app.route("/api/status")
+def api_status():
+    cfg = _cfg_ref or {}
+    with _proc_lock:
+        feeds = [
+            {
+                "name":    p.name,
+                "running": p.running,
+                "enabled": cfg.get(p.name, {}).get("enabled", True),
+            }
+            for p in _processes
+        ]
+    return jsonify({"feeds": feeds})
 
-        try:
-            cmd = input("  > ").strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            break
+@flask_app.route("/api/config")
+def api_config():
+    return jsonify(load_config())
 
-        if cmd == "":
-            _print_compact_header(cfg)
-        elif cmd == "1":
-            menu_weather(cfg)
-            _print_compact_header(cfg)
-        elif cmd == "2":
-            menu_stock(cfg)
-            _print_compact_header(cfg)
-        elif cmd == "3":
-            menu_jokes(cfg)
-            _print_compact_header(cfg)
-        elif cmd == "4":
-            menu_animations(cfg)
-            _print_compact_header(cfg)
-        elif cmd == "5":
-            menu_board(cfg)
-            _print_compact_header(cfg)
-        elif cmd == "r":
-            restart_all()
-            _log("Restarting all feeds")
-        elif cmd == "c":
-            _do_clear_queue(cfg)
-        elif cmd == "q":
-            break
+@flask_app.route("/api/config/<section>", methods=["POST"])
+def api_config_update(section):
+    global _cfg_ref
+    cfg  = load_config()
+    data = freq.get_json(force=True)
+    if section == "board":
+        for key in ("board_url", "ha_webhook_motion", "callback_host"):
+            if key in data:
+                cfg[key] = data[key]
+        save_config(cfg)
+        _cfg_ref = cfg
+        restart_all()
+        _log("Board settings updated")
+    elif section in ("weather", "stock", "jokes", "animations"):
+        cfg[section] = data
+        save_config(cfg)
+        _cfg_ref = cfg
+        restart_feed(section)
+        _log(f"{section.capitalize()} config updated")
+    else:
+        return jsonify({"ok": False, "reason": "unknown section"}), 400
+    return jsonify({"ok": True})
+
+@flask_app.route("/api/actions/restart_all", methods=["POST"])
+def api_restart_all():
+    restart_all()
+    _log("All feeds restarted")
+    return jsonify({"ok": True})
+
+@flask_app.route("/api/actions/restart/<name>", methods=["POST"])
+def api_restart_feed_route(name):
+    restart_feed(name)
+    return jsonify({"ok": True})
+
+@flask_app.route("/api/actions/clear_queue", methods=["POST"])
+def api_clear_queue():
+    cfg = _cfg_ref or load_config()
+    _do_clear_queue(cfg)
+    return jsonify({"ok": True})
+
+@flask_app.route("/api/geocode", methods=["POST"])
+def api_geocode():
+    data  = freq.get_json(force=True)
+    query = data.get("query", "")
+    if not query:
+        return jsonify({"results": []})
+    return jsonify({"results": geocode(query)})
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
-    global _processes
+    global _processes, _cfg_ref
 
     cfg = load_config()
-    save_config(cfg)  # write file with defaults if it didn't exist
+    save_config(cfg)
+    _cfg_ref = cfg
 
     _processes = _build_processes()
 
@@ -663,13 +462,15 @@ def main():
 
     callback_url = _start_callback_server(cfg)
     if callback_url:
-        _board_register(cfg, callback_url)
+        threading.Thread(target=_board_register, args=(cfg, callback_url), daemon=True).start()
 
     print("Starting feeds...", flush=True)
     time.sleep(1)
 
+    _log(f"Web UI at http://localhost:{WEB_PORT}")
+
     try:
-        main_loop(cfg)
+        flask_app.run(host="0.0.0.0", port=WEB_PORT, threaded=True, use_reloader=False, debug=False)
     finally:
         stop_event.set()
         _board_unregister(cfg)
