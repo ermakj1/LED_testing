@@ -1,0 +1,25 @@
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    environment:
+      - TZ=America/Los_Angeles
+    volumes:
+      - ~/homeassistant:/config
+    ports:
+      - "8123:8123"
+    network_mode: host
+
+  manage:
+    build: .
+    container_name: led-manage
+    restart: unless-stopped
+    environment:
+      - TZ=America/Los_Angeles
+      - PYTHONUTF8=1
+    volumes:
+      - ./feeds/config.json:/app/feeds/config.json
+    ports:
+      - "8090:8090"
+    network_mode: host

@@ -602,6 +602,15 @@ def main_loop(cfg):
     global _cfg_ref, _line_count
     _cfg_ref = cfg
 
+    if not sys.stdin.isatty():
+        _log("Running in non-interactive mode (no terminal)")
+        try:
+            while True:
+                time.sleep(60)
+        except KeyboardInterrupt:
+            pass
+        return
+
     print("\n  LED Display Manager — log streams below, Enter to refresh, q to quit and stop all feeds")
     _print_compact_header(cfg)
 
