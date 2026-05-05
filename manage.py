@@ -300,6 +300,21 @@ def _board_register(cfg, callback_url):
     except Exception as e:
         _log(f"Callback registration failed (will retry on next board wake): {e}")
 
+def _board_unregister(cfg):
+    board_url = cfg.get("board_url", "")
+    try:
+        req = urllib.request.Request(
+            f"{board_url}/unregister",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=3):
+            pass
+        _log("Unregistered callback from board")
+    except Exception:
+        pass
+
 # ── Compact header (reprinted in live log stream) ─────────────────────────────
 
 def _print_compact_header(cfg):
@@ -648,6 +663,7 @@ def main():
         main_loop(cfg)
     finally:
         stop_event.set()
+        _board_unregister(cfg)
         print("\nStopping feeds...")
         for p in _processes:
             p.stop()

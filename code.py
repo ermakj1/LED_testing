@@ -222,6 +222,13 @@ def register(request: Request):
     except Exception as e:
         return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
 
+@server.route("/unregister", "POST")
+def unregister(request: Request):
+    global callback_url
+    callback_url = None
+    log("Callback unregistered")
+    return Response(request, '{"ok":true}', content_type="application/json")
+
 @server.route("/ui", "GET")
 def serve_ui(request: Request):
     try:
