@@ -333,6 +333,50 @@ input:checked + .slider::before { transform: translateX(18px); }
 
 /* ── Divider ── */
 .divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+
+/* ── Queue items ── */
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 5px;
+  cursor: grab;
+  transition: opacity 0.15s, background 0.15s;
+  user-select: none;
+}
+.queue-item.playing {
+  border-color: var(--primary);
+  background: rgba(59,130,246,0.1);
+}
+.queue-item.drag-over { border-color: var(--warning); background: rgba(245,158,11,0.1); }
+.queue-item.dragging  { opacity: 0.4; }
+.drag-handle { color: var(--muted); font-size: 14px; cursor: grab; flex-shrink: 0; }
+.queue-item-body { flex: 1; min-width: 0; }
+.queue-cat {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.queue-cat.cat-weather    { color: #60a5fa; }
+.queue-cat.cat-stock      { color: #34d399; }
+.queue-cat.cat-joke, .queue-cat.cat-jokes { color: #f472b6; }
+.queue-cat.cat-animation, .queue-cat.cat-animations { color: #a78bfa; }
+.queue-summary { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-ttl { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.playing-badge {
+  font-size: 10px;
+  background: var(--primary);
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
 </style>
 </head>
 <body>
@@ -365,12 +409,14 @@ input:checked + .slider::before { transform: translateX(18px); }
   <!-- Config panel -->
   <div class="config-panel">
     <div class="tabs">
+      <button class="tab"        onclick="showTab('queue')">Queue</button>
       <button class="tab active" onclick="showTab('weather')">Weather</button>
       <button class="tab"        onclick="showTab('stock')">Stock</button>
       <button class="tab"        onclick="showTab('jokes')">Jokes</button>
       <button class="tab"        onclick="showTab('animations')">Anims</button>
       <button class="tab"        onclick="showTab('board')">Board</button>
     </div>
+    <div class="tab-content"        id="tab-queue"></div>
     <div class="tab-content active" id="tab-weather"><p style="color:var(--muted)">Loading...</p></div>
     <div class="tab-content"        id="tab-stock"></div>
     <div class="tab-content"        id="tab-jokes"></div>
@@ -463,12 +509,19 @@ function renderStatus(feeds) {
 function showTab(name) {
   currentTab = name;
   document.querySelectorAll('.tab').forEach((t, i) => {
-    const tabs = ['weather','stock','jokes','animations','board'];
+    const tabs = ['queue','weather','stock','jokes','animations','board'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  renderTab(name);
+  if (name === 'queue') {
+    pollQueue();
+    clearInterval(queuePollTimer);
+    queuePollTimer = setInterval(pollQueue, 3000);
+  } else {
+    clearInterval(queuePollTimer);
+    renderTab(name);
+  }
 }
 
 async function loadConfig() {
@@ -741,6 +794,117 @@ function toast(msg, type) {
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => el.className = '', 2500);
 }
+
+// ── Queue tab ──────────────────────────────────────────────────────────────
+let queueData = [];
+let queuePollTimer = null;
+
+function queueSummary(m) {
+  const cat = (m.category || '').toLowerCase();
+  if (cat === 'weather') {
+    const parts = [];
+    if (m.city)      parts.push(m.city);
+    if (m.condition) parts.push(m.condition);
+    if (m.high != null) parts.push(`H:${Math.round(m.high)}`);
+    if (m.low  != null) parts.push(`L:${Math.round(m.low)}`);
+    return parts.join(' ') || 'Weather';
+  }
+  if (cat === 'stock')     return `${m.symbol || ''} $${(m.price||0).toFixed(2)} ${m.change>=0?'+':''}${(m.change||0).toFixed(2)}%`;
+  if (cat === 'joke')      return (m.text || '').split('/')[0].trim().substring(0, 60);
+  if (cat === 'animation') return m.type || 'animation';
+  return (m.text || m.category || '').substring(0, 60);
+}
+
+async function pollQueue() {
+  if (currentTab !== 'queue') return;
+  try {
+    const r = await fetch('/api/board/queue');
+    const d = await r.json();
+    queueData = d.queue || [];
+    renderQueue();
+  } catch (_) {}
+}
+
+function renderQueue() {
+  const el = document.getElementById('tab-queue');
+  if (!el.classList.contains('active')) return;
+  if (!queueData.length) {
+    el.innerHTML = '<p class="empty-msg" style="padding:12px">Queue is empty</p>';
+    return;
+  }
+  el.innerHTML = queueData.map(m => `
+    <div class="queue-item${m.playing ? ' playing' : ''}" draggable="true"
+         data-id="${m.id}"
+         ondragstart="qDragStart(event)"
+         ondragover="qDragOver(event)"
+         ondragleave="qDragLeave(event)"
+         ondrop="qDrop(event)">
+      <span class="drag-handle">&#8942;&#8942;</span>
+      <div class="queue-item-body">
+        <div class="queue-cat cat-${(m.category||'').toLowerCase()}">${m.category || ''}</div>
+        <div class="queue-summary">${queueSummary(m)}</div>
+      </div>
+      ${m.playing ? '<span class="playing-badge">playing</span>' : ''}
+      <span class="queue-ttl">${m.expires_in_minutes != null ? m.expires_in_minutes + 'm' : ''}</span>
+      <button class="btn btn-xs btn-danger" onclick="deleteQueueItem(${m.id})">&#10005;</button>
+    </div>
+  `).join('');
+}
+
+async function deleteQueueItem(id) {
+  await fetch('/api/board/delete', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id}),
+  });
+  queueData = queueData.filter(m => m.id !== id);
+  renderQueue();
+}
+
+// ── Drag and drop reorder ──────────────────────────────────────────────────
+let _dragId = null;
+
+function qDragStart(e) {
+  _dragId = parseInt(e.currentTarget.dataset.id);
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function qDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function qDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+async function qDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const targetId = parseInt(e.currentTarget.dataset.id);
+  if (_dragId === null || _dragId === targetId) return;
+
+  const fromIdx = queueData.findIndex(m => m.id === _dragId);
+  const toIdx   = queueData.findIndex(m => m.id === targetId);
+  if (fromIdx === -1 || toIdx === -1) return;
+
+  const item = queueData.splice(fromIdx, 1)[0];
+  queueData.splice(toIdx, 0, item);
+  renderQueue();
+
+  await fetch('/api/board/reorder', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ids: queueData.map(m => m.id)}),
+  });
+  _dragId = null;
+}
+
+document.addEventListener('dragend', () => {
+  document.querySelectorAll('.queue-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
+});
 
 // ── Init ───────────────────────────────────────────────────────────────────
 connectLogs();

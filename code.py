@@ -255,6 +255,19 @@ def delete_message(request: Request):
     except Exception as e:
         return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
 
+@server.route("/reorder", "POST")
+def reorder_queue(request: Request):
+    try:
+        ids     = json.loads(request.body).get("ids", [])
+        id_map  = {m["id"]: m for m in message_queue}
+        reordered = [id_map[i] for i in ids if i in id_map]
+        leftover  = [m for m in message_queue if m["id"] not in ids]
+        message_queue[:] = reordered + leftover
+        log("Queue reordered")
+        return Response(request, '{"ok":true}', content_type="application/json")
+    except Exception as e:
+        return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
+
 @server.route("/clear", "POST")
 def clear_queue(request: Request):
     message_queue.clear()

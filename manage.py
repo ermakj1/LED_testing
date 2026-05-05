@@ -446,6 +446,48 @@ def api_geocode():
         return jsonify({"results": []})
     return jsonify({"results": geocode(query)})
 
+def _board_url():
+    cfg = _cfg_ref or load_config()
+    return cfg.get("board_url", "http://matrixportal.local:8080")
+
+@flask_app.route("/api/board/queue")
+def api_board_queue():
+    try:
+        with urllib.request.urlopen(_board_url() + "/", timeout=5) as r:
+            return jsonify(json.loads(r.read()))
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e), "count": 0, "queue": []}), 200
+
+@flask_app.route("/api/board/delete", methods=["POST"])
+def api_board_delete():
+    data = freq.get_json(force=True)
+    try:
+        req = urllib.request.Request(
+            _board_url() + "/delete",
+            data=json.dumps({"id": data["id"]}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return jsonify(json.loads(r.read()))
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e)}), 500
+
+@flask_app.route("/api/board/reorder", methods=["POST"])
+def api_board_reorder():
+    data = freq.get_json(force=True)
+    try:
+        req = urllib.request.Request(
+            _board_url() + "/reorder",
+            data=json.dumps({"ids": data["ids"]}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return jsonify(json.loads(r.read()))
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e)}), 500
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
