@@ -208,6 +208,27 @@ def restart_all():
         for p in _processes:
             p.restart()
 
+# ── Home Assistant forwarding ─────────────────────────────────────────────────
+
+def _forward_to_ha(event):
+    cfg = _cfg_ref
+    if not cfg:
+        return
+    url = cfg.get("ha_webhook_motion")
+    if not url:
+        return
+    try:
+        req = urllib.request.Request(
+            url, data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=3)
+        _log(f"HA notified ({event})")
+    except Exception as e:
+        _log(f"HA notify failed: {e}")
+
+
 # ── Callback server ───────────────────────────────────────────────────────────
 
 def _local_ip():
@@ -236,8 +257,10 @@ class _CallbackHandler(BaseHTTPRequestHandler):
                 pass
             if event == "person_detected":
                 _log(f"Motion: woke from sleep  (board={board_time} recv={recv_time}{lag})")
+                _forward_to_ha(event)
             elif event == "motion":
                 _log(f"Motion: active  (board={board_time} recv={recv_time}{lag})")
+                _forward_to_ha(event)
             else:
                 _log(f"Board event: {event}  (board={board_time} recv={recv_time})")
         except Exception:

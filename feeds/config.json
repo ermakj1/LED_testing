@@ -1,5 +1,6 @@
 {
   "board_url": "http://matrixportal.local:8080",
+  "ha_webhook_motion": "http://localhost:8123/api/webhook/led_board_person_detected",
   "weather": {
     "interval_minutes": 30,
     "cities": [
