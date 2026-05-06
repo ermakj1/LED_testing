@@ -20,7 +20,7 @@ import urllib.request
 from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
-from util import single_instance
+from util import single_instance, is_network_error
 
 def log(msg):
     print(f"{datetime.now().strftime('%H:%M:%S')}  {msg}", flush=True)
@@ -115,8 +115,12 @@ def send_all(ttl_minutes):
             result = post_to_board(board_url, condition, high, low, precip, ttl_minutes, city=short_name)
             log(f"{city['name']}: {condition}  H:{high}  L:{low}  precip:{precip}%  -> {result}")
         except Exception as e:
-            log(f"{city['name']}: Error — {e}")
-            log(traceback.format_exc().strip())
+            friendly = is_network_error(e)
+            if friendly:
+                log(f"{city['name']}: {friendly}")
+            else:
+                log(f"{city['name']}: Error — {e}")
+                log(traceback.format_exc().strip())
 
 def main():
     single_instance("weather")

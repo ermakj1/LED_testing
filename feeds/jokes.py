@@ -20,7 +20,7 @@ import urllib.request
 from pathlib import Path
 from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
-from util import single_instance
+from util import single_instance, is_network_error
 
 def log(msg):
     print(f"{datetime.now().strftime('%H:%M:%S')}  {msg}", flush=True)
@@ -90,8 +90,12 @@ def main():
             try:
                 send_one()
             except Exception as e:
-                log(f"Error: {e}")
-                log(traceback.format_exc().strip())
+                friendly = is_network_error(e)
+                if friendly:
+                    log(f"Error: {friendly}")
+                else:
+                    log(f"Error: {e}")
+                    log(traceback.format_exc().strip())
         else:
             log("Jokes disabled — sleeping")
 
