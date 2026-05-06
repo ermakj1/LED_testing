@@ -53,12 +53,11 @@ def fetch_quote(symbol):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read())
-    meta         = data["chart"]["result"][0]["meta"]
-    market_state = meta.get("marketState", "CLOSED")
-    price        = meta["regularMarketPrice"]
-    prev_close   = meta["chartPreviousClose"]
-    change_pct   = round((price - prev_close) / prev_close * 100, 2)
-    return price, change_pct, market_state
+    meta       = data["chart"]["result"][0]["meta"]
+    price      = meta["regularMarketPrice"]
+    prev_close = meta["chartPreviousClose"]
+    change_pct = round((price - prev_close) / prev_close * 100, 2)
+    return price, change_pct
 
 def post_to_board(board_url, symbol, price, change, ttl_minutes):
     payload = {
@@ -93,10 +92,7 @@ def send_all(ttl_minutes):
 
     for symbol in symbols:
         try:
-            price, change, market_state = fetch_quote(symbol)
-            if market_state == "CLOSED":
-                log(f"{symbol}: market closed — skipping")
-                continue
+            price, change = fetch_quote(symbol)
             result = post_to_board(board_url, symbol, price, change, ttl_minutes)
             log(f"{symbol}  ${price:.2f}  {change:+.2f}%  -> {result}")
         except Exception as e:
