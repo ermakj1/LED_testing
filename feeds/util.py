@@ -26,10 +26,12 @@ def single_instance(name):
 def is_network_error(e):
     """Return a friendly message if e looks like a board-unreachable error, else None."""
     msg = str(e).lower()
-    if isinstance(e, urllib.error.URLError) and isinstance(e.reason, socket.gaierror):
+    # Unwrap URLError to check the underlying reason
+    reason = getattr(e, "reason", e)
+    if isinstance(reason, socket.gaierror) or "no address associated with hostname" in msg or "name or service not known" in msg:
         return "Board unreachable — possibly on wrong network (can't resolve hostname)"
-    if isinstance(e, (ConnectionRefusedError, TimeoutError)):
-        return "Board unreachable — connection refused or timed out"
-    if "no address associated with hostname" in msg or "name or service not known" in msg:
-        return "Board unreachable — possibly on wrong network (can't resolve hostname)"
+    if isinstance(reason, (ConnectionRefusedError, TimeoutError)) or isinstance(e, (ConnectionRefusedError, TimeoutError)):
+        return "Board unreachable — connection refused or timed out (board may be rebooting)"
+    if "timed out" in msg or "connection refused" in msg:
+        return "Board unreachable — connection refused or timed out (board may be rebooting)"
     return None
