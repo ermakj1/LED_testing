@@ -107,6 +107,7 @@ LOG_HISTORY_MAX   = 500
 
 _cfg_ref   = None
 _proc_lock = threading.Lock()
+_paused    = False
 
 def _broadcast(line):
     with _log_history_lock:
@@ -202,8 +203,13 @@ def _build_processes():
 def _manager_loop(stop_event):
     while not stop_event.is_set():
         with _proc_lock:
-            for p in _processes:
-                p.tick()
+            if _paused:
+                for p in _processes:
+                    if p.running:
+                        p.stop()
+            else:
+                for p in _processes:
+                    p.tick()
         time.sleep(5)
 
 def restart_feed(name):
@@ -392,7 +398,7 @@ def api_status():
             }
             for p in _processes
         ]
-    return jsonify({"feeds": feeds})
+    return jsonify({"feeds": feeds, "paused": _paused})
 
 @flask_app.route("/api/config")
 def api_config():
@@ -420,6 +426,20 @@ def api_config_update(section):
     else:
         return jsonify({"ok": False, "reason": "unknown section"}), 400
     return jsonify({"ok": True})
+
+@flask_app.route("/api/actions/pause", methods=["POST"])
+def api_pause():
+    global _paused
+    _paused = True
+    _log("Feeds paused — board offline mode")
+    return jsonify({"ok": True, "paused": True})
+
+@flask_app.route("/api/actions/resume", methods=["POST"])
+def api_resume():
+    global _paused
+    _paused = False
+    _log("Feeds resumed")
+    return jsonify({"ok": True, "paused": False})
 
 @flask_app.route("/api/actions/restart_all", methods=["POST"])
 def api_restart_all():

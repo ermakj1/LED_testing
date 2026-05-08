@@ -92,6 +92,7 @@ header {
 .btn-success  { background: var(--success); color: #fff; }
 .btn-danger   { background: var(--danger);  color: #fff; }
 .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-warning  { background: var(--warning);  color: #000; }
 .btn-xs { padding: 3px 8px; font-size: 12px; }
 .btn-full { width: 100%; margin-top: 12px; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -140,6 +141,8 @@ header {
 .log-motion  { color: var(--orange); }
 .log-ha      { color: var(--success); }
 .log-error   { color: var(--danger); }
+.log-warn    { color: var(--warning); }
+.log-muted   { color: #6b7a99; }
 .log-start   { color: var(--primary); }
 .log-default { color: #c8d4e8; }
 
@@ -385,6 +388,7 @@ input:checked + .slider::before { transform: translateX(18px); }
   <div class="header-title">&#11042; LED Display Manager</div>
   <div id="feed-status"></div>
   <div class="header-actions">
+    <button id="pause-btn" class="btn btn-warning" onclick="togglePause()">&#9646;&#9646; Pause Feeds</button>
     <button class="btn btn-secondary" onclick="apiAction('restart_all')">&#8635; Restart All</button>
     <button class="btn btn-danger"    onclick="apiAction('clear_queue')">&#10005; Clear Queue</button>
   </div>
@@ -454,10 +458,12 @@ function connectLogs() {
 
 function logClass(line) {
   const l = line.toLowerCase();
-  if (l.includes('motion:'))                               return 'log-motion';
-  if (l.includes('ha notified') || l.includes('ha notify')) return 'log-ha';
+  if (l.includes('motion:'))                                                   return 'log-motion';
+  if (l.includes('ha notified') || l.includes('ha notify'))                   return 'log-ha';
   if (l.includes('error') || l.includes('failed') || l.includes('econnaborted')) return 'log-error';
-  if (l.includes('started ') || l.includes('registered'))  return 'log-start';
+  if (l.includes('unreachable') || l.includes('wrong network') || l.includes('connection refused') || l.includes('timed out')) return 'log-warn';
+  if (l.includes('skipping') || l.includes('disabled'))                       return 'log-muted';
+  if (l.includes('started ') || l.includes('registered'))                     return 'log-start';
   return 'log-default';
 }
 
@@ -493,16 +499,33 @@ async function pollStatus() {
   try {
     const r = await fetch('/api/status');
     const d = await r.json();
-    renderStatus(d.feeds);
+    renderStatus(d.feeds, d.paused);
   } catch (_) {}
 }
 
-function renderStatus(feeds) {
-  const el = document.getElementById('feed-status');
+function renderStatus(feeds, paused) {
+  const el  = document.getElementById('feed-status');
+  const btn = document.getElementById('pause-btn');
   el.innerHTML = feeds.map(f => {
-    const cls = !f.enabled ? 'disabled' : f.running ? 'running' : 'stopped';
+    const cls = paused ? 'disabled' : !f.enabled ? 'disabled' : f.running ? 'running' : 'stopped';
     return `<div class="feed-pill ${cls}"><span class="dot"></span>${f.name}</div>`;
   }).join('');
+  if (btn) {
+    btn.textContent = paused ? '▶ Resume Feeds' : '⏸ Pause Feeds';
+    btn.className   = paused ? 'btn btn-success' : 'btn btn-warning';
+  }
+}
+
+async function togglePause() {
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    const action = d.paused ? 'resume' : 'pause';
+    await fetch(`/api/actions/${action}`, {method: 'POST'});
+    pollStatus();
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
 }
 
 // ── Tab switching ──────────────────────────────────────────────────────────
