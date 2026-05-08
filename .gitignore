@@ -6,3 +6,4 @@ settings.toml
 *.toml
 lib/
 feeds/.*.lock
+feeds/.image_cache/

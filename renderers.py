@@ -327,6 +327,10 @@ def render(msg):
     if category == "calendar":  return render_calendar(msg)
     if category == "joke":      return render_joke(msg)
     if category == "animation": return render_animation(msg)
+    if category == "bitmap":    return render_bitmap(msg)
+    if category == "word":      return render_word(msg)
+    if category == "history":   return render_history(msg)
+    if category == "countdown": return render_countdown(msg)
     return render_generic(msg)
 
 
@@ -1088,3 +1092,132 @@ def render_animation(msg):
     if anim == "life":      return _anim_game_of_life(duration)
     if anim == "cube":      return _anim_cube(duration)
     return _anim_fireworks(duration)
+
+
+# ---------------------------------------------------------------------------
+# New renderers: bitmap, word, history, countdown
+# ---------------------------------------------------------------------------
+
+def render_bitmap(msg):
+    """Display a pre-converted BMP file from the board filesystem."""
+    import adafruit_imageload
+    path    = msg.get("path", "")
+    caption = msg.get("caption", "")
+    if not path:
+        return "done"
+    try:
+        image, palette = adafruit_imageload.load(
+            path, bitmap=displayio.Bitmap, palette=displayio.Palette
+        )
+        tile  = displayio.TileGrid(image, pixel_shader=palette)
+        group = displayio.Group()
+        group.append(tile)
+
+        if caption:
+            # Semi-transparent caption bar at the bottom
+            cap_lbl = label.Label(terminalio.FONT, text=caption[:10], color=0xFFFFFF)
+            cap_lbl.x = 1
+            cap_lbl.y = PANEL_HEIGHT - 5
+            group.append(cap_lbl)
+
+        _display.root_group = group
+        return _hold(8)
+    except Exception as e:
+        print(f"render_bitmap error: {e}")
+        return "done"
+
+
+def render_word(msg):
+    """Show word of the day: word on top, scrolling definition below."""
+    word  = msg.get("word", "")
+    pos   = msg.get("pos", "")
+    defn  = msg.get("definition", "")
+    bg    = 0x000A10
+
+    # Line 1: word (highlighted)
+    word_lbl = label.Label(terminalio.FONT, text=word[:10].upper(), color=0x00CCFF)
+    word_lbl.x = 2
+    word_lbl.y = 6
+
+    # Line 2: part of speech
+    pos_lbl = label.Label(terminalio.FONT, text=pos[:12] if pos else "", color=0x888888)
+    pos_lbl.x = 2
+    pos_lbl.y = 15
+
+    group = displayio.Group()
+    group.append(_bg(bg))
+    group.append(word_lbl)
+    group.append(pos_lbl)
+    _display.root_group = group
+    result = _hold(3)
+    if result and result != "done":
+        return result
+
+    # Then scroll definition
+    if defn:
+        return _show_text(defn, 0xCCCCCC, bg)
+    return "done"
+
+
+def render_history(msg):
+    """Show a This Day in History entry: year header then scrolling event text."""
+    year = msg.get("year", "")
+    text = msg.get("text", "")
+    bg   = 0x0A0800
+
+    year_str = str(year) if year else ""
+    header   = f"In {year_str}:" if year_str else "On this day:"
+
+    # Show year header briefly
+    result = _show_text(header, 0xFFAA00, bg, hold_secs=2)
+    if result and result != "done":
+        return result
+
+    # Then scroll the event text
+    return _show_text(text, 0xEEEECC, bg)
+
+
+def render_countdown(msg):
+    """Show countdown: event name + days remaining."""
+    name = msg.get("name", "Event")
+    days = int(msg.get("days", 0))
+    hours = int(msg.get("hours", 0))
+    bg   = 0x080010
+
+    # Color shifts from white → yellow → orange as event approaches
+    if days == 0:
+        num_color = 0xFF4400  # today! orange-red
+    elif days <= 7:
+        num_color = 0xFFAA00  # soon — amber
+    elif days <= 30:
+        num_color = 0xFFFF00  # within a month — yellow
+    else:
+        num_color = 0x00AAFF  # far away — blue
+
+    # Line 1: event name (truncated)
+    name_lbl = label.Label(terminalio.FONT, text=name[:10], color=0xCCCCCC)
+    name_lbl.x = (PANEL_WIDTH - len(name[:10]) * 6) // 2
+    name_lbl.y = 6
+
+    # Line 2: days count (large)
+    if days == 0:
+        count_str = "TODAY!"
+    elif days == 1 and hours > 0:
+        count_str = f"{hours}h"
+    else:
+        count_str = f"{days}d"
+
+    count_lbl = label.Label(terminalio.FONT, text=count_str, color=num_color)
+    count_lbl.x = 0
+    count_lbl.y = 0
+    count_grp = displayio.Group(scale=2)
+    count_grp.x = (PANEL_WIDTH - len(count_str) * 6 * 2) // 2
+    count_grp.y = 14
+    count_grp.append(count_lbl)
+
+    group = displayio.Group()
+    group.append(_bg(bg))
+    group.append(name_lbl)
+    group.append(count_grp)
+    _display.root_group = group
+    return _hold(5)

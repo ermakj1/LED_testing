@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir flask
+RUN pip install --no-cache-dir flask Pillow
 
 COPY manage.py .
 COPY ui_manage.html .

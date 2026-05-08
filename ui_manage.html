@@ -418,6 +418,10 @@ input:checked + .slider::before { transform: translateX(18px); }
       <button class="tab"        onclick="showTab('stock')">Stock</button>
       <button class="tab"        onclick="showTab('jokes')">Jokes</button>
       <button class="tab"        onclick="showTab('animations')">Anims</button>
+      <button class="tab"        onclick="showTab('nasa')">NASA</button>
+      <button class="tab"        onclick="showTab('wordofday')">Word</button>
+      <button class="tab"        onclick="showTab('history')">History</button>
+      <button class="tab"        onclick="showTab('countdown')">Countdown</button>
       <button class="tab"        onclick="showTab('board')">Board</button>
     </div>
     <div class="tab-content"        id="tab-queue"></div>
@@ -425,6 +429,10 @@ input:checked + .slider::before { transform: translateX(18px); }
     <div class="tab-content"        id="tab-stock"></div>
     <div class="tab-content"        id="tab-jokes"></div>
     <div class="tab-content"        id="tab-animations"></div>
+    <div class="tab-content"        id="tab-nasa"></div>
+    <div class="tab-content"        id="tab-wordofday"></div>
+    <div class="tab-content"        id="tab-history"></div>
+    <div class="tab-content"        id="tab-countdown"></div>
     <div class="tab-content"        id="tab-board"></div>
   </div>
 
@@ -531,8 +539,8 @@ async function togglePause() {
 // ── Tab switching ──────────────────────────────────────────────────────────
 function showTab(name) {
   currentTab = name;
+  const tabs = ['queue','weather','stock','jokes','animations','nasa','wordofday','history','countdown','board'];
   document.querySelectorAll('.tab').forEach((t, i) => {
-    const tabs = ['queue','weather','stock','jokes','animations','board'];
     t.classList.toggle('active', tabs[i] === name);
   });
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -555,7 +563,12 @@ async function loadConfig() {
 
 function renderTab(name) {
   if (!cfg) return;
-  const fns = {weather: renderWeather, stock: renderStock, jokes: renderJokes, animations: renderAnimations, board: renderBoard};
+  const fns = {
+    weather: renderWeather, stock: renderStock, jokes: renderJokes,
+    animations: renderAnimations, board: renderBoard,
+    nasa: renderNasa, wordofday: renderWordOfDay,
+    history: renderHistory, countdown: renderCountdown,
+  };
   if (fns[name]) fns[name]();
 }
 
@@ -775,6 +788,148 @@ async function saveBoard() {
     board_url:         document.getElementById('b-url').value.trim(),
     ha_webhook_motion: document.getElementById('b-ha').value.trim(),
     callback_host:     document.getElementById('b-cbhost').value.trim(),
+  });
+}
+
+// ── NASA tab ───────────────────────────────────────────────────────────────
+function renderNasa() {
+  const n = cfg.nasa || {};
+  document.getElementById('tab-nasa').innerHTML = `
+    <div class="toggle-row">
+      <span class="toggle-label">Enabled</span>
+      <label class="switch"><input type="checkbox" id="n-enabled" ${n.enabled !== false ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
+    <div class="interval-row">
+      <label>Update every</label>
+      <input type="number" id="n-interval" value="${n.interval_minutes || 1440}" min="60" max="1440">
+      <span>minutes</span>
+    </div>
+    <div class="field">
+      <label>NASA API Key <span style="color:var(--muted)">(DEMO_KEY works for daily use)</span></label>
+      <input type="text" id="n-apikey" value="${n.api_key || 'DEMO_KEY'}" placeholder="DEMO_KEY">
+    </div>
+    <button class="btn btn-success btn-full" onclick="saveNasa()">Save NASA Settings</button>
+  `;
+}
+async function saveNasa() {
+  await saveSection('nasa', {
+    enabled:          document.getElementById('n-enabled').checked,
+    interval_minutes: +document.getElementById('n-interval').value,
+    api_key:          document.getElementById('n-apikey').value.trim(),
+  });
+}
+
+// ── Word of Day tab ────────────────────────────────────────────────────────
+function renderWordOfDay() {
+  const w = cfg.wordofday || {};
+  document.getElementById('tab-wordofday').innerHTML = `
+    <div class="toggle-row">
+      <span class="toggle-label">Enabled</span>
+      <label class="switch"><input type="checkbox" id="wod-enabled" ${w.enabled !== false ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
+    <div class="interval-row">
+      <label>Update every</label>
+      <input type="number" id="wod-interval" value="${w.interval_minutes || 1440}" min="60" max="1440">
+      <span>minutes</span>
+    </div>
+    <button class="btn btn-success btn-full" onclick="saveWordOfDay()">Save Word of Day Settings</button>
+  `;
+}
+async function saveWordOfDay() {
+  await saveSection('wordofday', {
+    enabled:          document.getElementById('wod-enabled').checked,
+    interval_minutes: +document.getElementById('wod-interval').value,
+  });
+}
+
+// ── History tab ────────────────────────────────────────────────────────────
+function renderHistory() {
+  const h = cfg.history || {};
+  document.getElementById('tab-history').innerHTML = `
+    <div class="toggle-row">
+      <span class="toggle-label">Enabled</span>
+      <label class="switch"><input type="checkbox" id="h-enabled" ${h.enabled !== false ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
+    <div class="interval-row">
+      <label>Update every</label>
+      <input type="number" id="h-interval" value="${h.interval_minutes || 60}" min="10" max="1440">
+      <span>minutes</span>
+    </div>
+    <div class="interval-row">
+      <label>Events per cycle</label>
+      <input type="number" id="h-count" value="${h.count || 3}" min="1" max="10">
+    </div>
+    <button class="btn btn-success btn-full" onclick="saveHistory()">Save History Settings</button>
+  `;
+}
+async function saveHistory() {
+  await saveSection('history', {
+    enabled:          document.getElementById('h-enabled').checked,
+    interval_minutes: +document.getElementById('h-interval').value,
+    count:            +document.getElementById('h-count').value,
+  });
+}
+
+// ── Countdown tab ──────────────────────────────────────────────────────────
+let _countdownEvents = [];
+
+async function renderCountdown() {
+  const c = cfg.countdown || {};
+  const r = await fetch('/api/countdown/events');
+  const d = await r.json();
+  _countdownEvents = d.events || [];
+
+  document.getElementById('tab-countdown').innerHTML = `
+    <div class="toggle-row">
+      <span class="toggle-label">Enabled</span>
+      <label class="switch"><input type="checkbox" id="cd-enabled" ${c.enabled !== false ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
+    <div class="interval-row">
+      <label>Update every</label>
+      <input type="number" id="cd-interval" value="${c.interval_minutes || 60}" min="10" max="1440">
+      <span>minutes</span>
+    </div>
+    <div class="list-section">
+      <div class="list-section-title">Events</div>
+      <div id="cd-event-list">
+        ${_countdownEvents.length ? _countdownEvents.map((e,i) => `
+          <div class="list-item">
+            <span>${e.name} — ${e.date}</span>
+            <button class="btn btn-xs btn-danger" onclick="removeCountdownEvent(${i})">&#10005;</button>
+          </div>`).join('') : '<p class="empty-msg">No events added</p>'}
+      </div>
+    </div>
+    <div class="list-section">
+      <div class="list-section-title">Add Event</div>
+      <div class="add-row">
+        <input type="text"  id="cd-name" placeholder="Event name" style="flex:2">
+        <input type="date"  id="cd-date" style="flex:1">
+        <button class="btn btn-primary" onclick="addCountdownEvent()">Add</button>
+      </div>
+    </div>
+    <button class="btn btn-success btn-full" onclick="saveCountdown()">Save Countdown Settings</button>
+  `;
+}
+
+function addCountdownEvent() {
+  const name = document.getElementById('cd-name').value.trim();
+  const date = document.getElementById('cd-date').value;
+  if (!name || !date) { toast('Name and date required', 'err'); return; }
+  _countdownEvents.push({name, date});
+  renderCountdown();
+}
+
+function removeCountdownEvent(i) {
+  _countdownEvents.splice(i, 1);
+  renderCountdown();
+}
+
+async function saveCountdown() {
+  // Save enable/interval via saveSection
+  await saveSection('countdown', {
+    enabled:          document.getElementById('cd-enabled').checked,
+    interval_minutes: +document.getElementById('cd-interval').value,
+    events:           _countdownEvents,
   });
 }
 

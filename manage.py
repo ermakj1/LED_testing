@@ -55,6 +55,29 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "types": list(ALL_ANIM_TYPES),
     },
+    "nasa": {
+        "interval_minutes": 1440,
+        "enabled": True,
+        "api_key": "DEMO_KEY",
+        "ttl_minutes": 1440,
+    },
+    "wordofday": {
+        "interval_minutes": 1440,
+        "enabled": True,
+        "ttl_minutes": 1440,
+    },
+    "history": {
+        "interval_minutes": 60,
+        "enabled": True,
+        "count": 3,
+        "ttl_minutes": 65,
+    },
+    "countdown": {
+        "interval_minutes": 60,
+        "enabled": True,
+        "ttl_minutes": 65,
+        "events": [],
+    },
 }
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -198,6 +221,10 @@ def _build_processes():
         ManagedProcess("stock",      [sys.executable, "feeds/stock.py"]),
         ManagedProcess("jokes",      [sys.executable, "feeds/jokes.py"]),
         ManagedProcess("animations", [sys.executable, "feeds/animations.py"]),
+        ManagedProcess("nasa",       [sys.executable, "feeds/nasa.py"]),
+        ManagedProcess("wordofday",  [sys.executable, "feeds/wordofday.py"]),
+        ManagedProcess("history",    [sys.executable, "feeds/history.py"]),
+        ManagedProcess("countdown",  [sys.executable, "feeds/countdown.py"]),
     ]
 
 def _manager_loop(stop_event):
@@ -417,12 +444,13 @@ def api_config_update(section):
         _cfg_ref = cfg
         restart_all()
         _log("Board settings updated")
-    elif section in ("weather", "stock", "jokes", "animations"):
+    elif section in ("weather", "stock", "jokes", "animations",
+                     "nasa", "wordofday", "history", "countdown"):
         cfg[section] = data
         save_config(cfg)
         _cfg_ref = cfg
         restart_feed(section)
-        _log(f"{section.capitalize()} config updated")
+        _log(f"{section} config updated")
     else:
         return jsonify({"ok": False, "reason": "unknown section"}), 400
     return jsonify({"ok": True})
@@ -456,6 +484,23 @@ def api_restart_feed_route(name):
 def api_clear_queue():
     cfg = _cfg_ref or load_config()
     _do_clear_queue(cfg)
+    return jsonify({"ok": True})
+
+@flask_app.route("/api/countdown/events", methods=["GET"])
+def api_countdown_events():
+    cfg    = load_config()
+    events = cfg.get("countdown", {}).get("events", [])
+    return jsonify({"events": events})
+
+@flask_app.route("/api/countdown/events", methods=["POST"])
+def api_countdown_events_save():
+    data   = freq.get_json(force=True)
+    events = data.get("events", [])
+    cfg    = load_config()
+    cfg.setdefault("countdown", {})["events"] = events
+    save_config(cfg)
+    restart_feed("countdown")
+    _log(f"Countdown events saved ({len(events)} events)")
     return jsonify({"ok": True})
 
 @flask_app.route("/api/geocode", methods=["POST"])
