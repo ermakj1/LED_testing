@@ -18,9 +18,8 @@ import json
 import time
 import uuid
 import threading
-from flask import Flask, Response, jsonify, request
-
-app = Flask(__name__)
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 
 _lock    = threading.Lock()
 _queue   = []      # list of message dicts
@@ -38,77 +37,109 @@ def _clean():
     global _queue
     _queue = [m for m in _queue if not _expired(m)]
 
+def _json(handler, data, status=200):
+    body = json.dumps(data).encode()
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json")
+    handler.send_header("Content-Length", len(body))
+    handler.end_headers()
+    handler.wfile.write(body)
 
-# ─── Board-compatible endpoints ───────────────────────────────────────────────
-
-@app.route("/", methods=["GET"])
-def board_status():
-    with _lock:
-        _clean()
-        return jsonify({"status": "emulator", "queue_size": len(_queue)})
-
-
-@app.route("/add", methods=["POST"])
-def add_message():
-    msg = request.get_json(force=True, silent=True) or {}
-    msg["_added"] = time.time()
-    msg["_id"]    = str(uuid.uuid4())[:8]
-
-    cat    = msg.get("category", "")
-    # Dedup key: same category + same ticker/name replaces old entry
-    ticker = msg.get("ticker") or msg.get("symbol")
-    name   = msg.get("name")
-    key    = (cat, ticker or name or "")
-
-    with _lock:
-        _clean()
-        _queue[:] = [
-            m for m in _queue
-            if (m.get("category"),
-                m.get("ticker") or m.get("symbol") or m.get("name") or "") != key
-        ]
-        _queue.append(msg)
-
-    return jsonify({"ok": True, "queue_size": len(_queue)})
+def _read_body(handler):
+    length = int(handler.headers.get("Content-Length", 0))
+    return handler.rfile.read(length) if length else b""
 
 
-@app.route("/upload", methods=["POST"])
-def upload():
-    board_path = request.headers.get("X-Path", "/img.bmp")
-    with _lock:
-        _uploads[board_path] = request.data
-    return jsonify({"ok": True, "path": board_path})
+# ─── Request handler ──────────────────────────────────────────────────────────
 
+class Handler(BaseHTTPRequestHandler):
 
-@app.route("/img")
-def get_image():
-    path = request.args.get("path", "")
-    with _lock:
-        data = _uploads.get(path)
-    if data:
-        return Response(data, mimetype="image/bmp")
-    return "not found", 404
+    def log_message(self, fmt, *args):
+        pass  # silence per-request access log
 
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path   = parsed.path
 
-# ─── Emulator-specific endpoints ──────────────────────────────────────────────
+        if path == "/" or path == "":
+            with _lock:
+                _clean()
+                _json(self, {"status": "emulator", "queue_size": len(_queue)})
 
-@app.route("/queue")
-def get_queue():
-    with _lock:
-        _clean()
-        return jsonify({"queue": list(_queue)})
+        elif path == "/queue":
+            with _lock:
+                _clean()
+                _json(self, {"queue": list(_queue)})
 
+        elif path == "/img":
+            qs   = parse_qs(parsed.query)
+            key  = qs.get("path", [""])[0]
+            with _lock:
+                data = _uploads.get(key)
+            if data:
+                self.send_response(200)
+                self.send_header("Content-Type", "image/bmp")
+                self.send_header("Content-Length", len(data))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(404)
+                self.end_headers()
 
-@app.route("/queue/clear", methods=["POST"])
-def clear_queue():
-    with _lock:
-        _queue.clear()
-    return jsonify({"ok": True})
+        elif path == "/emulator":
+            body = HTML.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", len(body))
+            self.end_headers()
+            self.wfile.write(body)
 
+        else:
+            self.send_response(404)
+            self.end_headers()
 
-@app.route("/emulator")
-def emulator_ui():
-    return Response(HTML, mimetype="text/html")
+    def do_POST(self):
+        path = urlparse(self.path).path
+
+        if path == "/add":
+            raw = _read_body(self)
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                msg = {}
+            msg["_added"] = time.time()
+            msg["_id"]    = str(uuid.uuid4())[:8]
+
+            cat    = msg.get("category", "")
+            ticker = msg.get("ticker") or msg.get("symbol")
+            name   = msg.get("name")
+            key    = (cat, ticker or name or "")
+
+            with _lock:
+                _clean()
+                _queue[:] = [
+                    m for m in _queue
+                    if (m.get("category"),
+                        m.get("ticker") or m.get("symbol") or m.get("name") or "") != key
+                ]
+                _queue.append(msg)
+            _json(self, {"ok": True, "queue_size": len(_queue)})
+
+        elif path == "/upload":
+            board_path = self.headers.get("X-Path", "/img.bmp")
+            data = _read_body(self)
+            with _lock:
+                _uploads[board_path] = data
+            _json(self, {"ok": True, "path": board_path})
+
+        elif path == "/queue/clear":
+            with _lock:
+                _queue.clear()
+            _json(self, {"ok": True})
+
+        else:
+            self.send_response(404)
+            self.end_headers()
 
 
 # ─── Embedded UI ──────────────────────────────────────────────────────────────
@@ -642,6 +673,10 @@ if __name__ == "__main__":
                         help="Host to bind to (default: 127.0.0.1)")
     args = parser.parse_args()
 
+    server = HTTPServer((args.host, args.port), Handler)
+    server.socket.setsockopt(__import__('socket').SOL_SOCKET,
+                             __import__('socket').SO_REUSEADDR, 1)
+
     print()
     print(f"  LED Matrix Emulator")
     print(f"  Open: http://localhost:{args.port}/emulator")
@@ -649,4 +684,7 @@ if __name__ == "__main__":
     print(f"  To route feeds here instead of the board:")
     print(f'  Set "board_url": "http://localhost:{args.port}" in feeds/config.json')
     print()
-    app.run(host=args.host, port=args.port, debug=False)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n  Stopped.")
