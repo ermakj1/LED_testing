@@ -18,7 +18,7 @@ import traceback
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from datetime import datetime
+from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).parent))
 from util import single_instance, is_network_error
 
@@ -85,10 +85,17 @@ def send_all(ttl_minutes):
         print("No symbols configured")
         return
 
-    hour = datetime.now().hour
-    if market_hours_only and not (9 <= hour < 17):
-        log("Outside market hours — skipping")
-        return
+    eastern = datetime.now(ZoneInfo("America/New_York"))
+    # NYSE open Mon-Fri 9:30am-4:00pm Eastern
+    if market_hours_only:
+        if eastern.weekday() >= 5:
+            log("Outside market hours (weekend) — skipping")
+            return
+        market_open  = eastern.replace(hour=9,  minute=30, second=0, microsecond=0)
+        market_close = eastern.replace(hour=16, minute=0,  second=0, microsecond=0)
+        if not (market_open <= eastern < market_close):
+            log(f"Outside market hours ({eastern.strftime('%H:%M')} ET) — skipping")
+            return
 
     for symbol in symbols:
         try:
