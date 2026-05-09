@@ -12,7 +12,7 @@ from adafruit_display_text import label
 
 PANEL_WIDTH  = 64
 PANEL_HEIGHT = 32
-SCROLL_DELAY = 0.04
+SCROLL_DELAY = 0.02
 
 ICON_W = 16
 ICON_H = 16
