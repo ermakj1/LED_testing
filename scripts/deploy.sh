@@ -2,10 +2,15 @@
 # Deploy to the board.
 # - If CIRCUITPY is mounted (USB): copies files directly.
 # - Otherwise: uploads over WiFi via the board's /upload endpoint (port 8080).
+#
+# Board files live in board/ — they are copied flat to the root of CIRCUITPY.
+# Run from anywhere: script changes to repo root automatically.
+
+cd "$(dirname "$0")/.."   # always run relative to repo root
 
 CIRCUITPY="/Volumes/CIRCUITPY"
 BOARD_HOST="${BOARD_HOST:-matrixportal.local}"
-FILES="code.py renderers.py ui.html boot.py"
+FILES="code.py renderers.py ui.html boot.py"   # filenames inside board/
 FORCE_WIFI=false
 WITH_LIB=false
 
@@ -23,7 +28,7 @@ fi
 
 deploy_usb() {
     for f in $FILES; do
-        cp "$f" "$CIRCUITPY/$f" && echo "  $f"
+        cp "board/$f" "$CIRCUITPY/$f" && echo "  $f"
     done
     if [ -d "lib" ] && [ "$(ls -A lib)" ]; then
         cp -r lib/. "$CIRCUITPY/lib/"
@@ -47,7 +52,7 @@ deploy_wifi() {
     }
 
     for f in $FILES; do
-        put_file "$f" "$f"
+        put_file "board/$f" "$f"   # source: board/<file>, dest: /<file> on board
     done
     if [ "$WITH_LIB" = true ] && [ -d "lib" ] && [ "$(ls -A lib)" ]; then
         find lib -type f -not -name ".DS_Store" | while read lf; do

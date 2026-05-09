@@ -555,8 +555,26 @@ def api_board_reorder():
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+def _clear_lock_files():
+    """Remove stale feed lock files on startup.
+
+    manage.py is the authoritative process manager — if it's starting fresh,
+    any existing lock files are guaranteed stale (leftover from a previous
+    container run / crash).  Clearing them prevents single_instance() from
+    mistaking a recycled PID in the new container for a still-running feed.
+    """
+    feeds_dir = REPO_DIR / "feeds"
+    for lock in feeds_dir.glob(".*.lock"):
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
 def main():
     global _processes, _cfg_ref
+
+    _clear_lock_files()
 
     cfg = load_config()
     save_config(cfg)

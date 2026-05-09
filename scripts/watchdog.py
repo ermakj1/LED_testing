@@ -20,7 +20,7 @@ from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-REPO_DIR = Path(__file__).parent.resolve()
+REPO_DIR = Path(__file__).parent.parent.resolve()  # scripts/ → repo root
 
 # Each entry: (display name, command list relative to REPO_DIR)
 FEEDS = [
