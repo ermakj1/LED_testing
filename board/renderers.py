@@ -1182,7 +1182,7 @@ def render_word(msg):
 
     # Then scroll definition
     if defn:
-        return _show_text(defn, 0xCCCCCC, bg)
+        return _show_text(defn, 0x00CCFF, bg)
     return "done"
 
 
@@ -1205,7 +1205,7 @@ def render_history(msg):
         return result
 
     # Then scroll the event text
-    return _show_text(text, 0xEEEECC, bg)
+    return _show_text(text, 0xFFAA00, bg)
 
 
 def render_countdown(msg):
