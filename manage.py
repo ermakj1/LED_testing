@@ -78,6 +78,10 @@ DEFAULT_CONFIG = {
         "ttl_minutes": 65,
         "events": [],
     },
+    "quotes": {
+        "interval_minutes": 60,
+        "enabled": True,
+    },
 }
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -225,6 +229,7 @@ def _build_processes():
         ManagedProcess("wordofday",  [sys.executable, "feeds/wordofday.py"]),
         ManagedProcess("history",    [sys.executable, "feeds/history.py"]),
         ManagedProcess("countdown",  [sys.executable, "feeds/countdown.py"]),
+        ManagedProcess("quotes",     [sys.executable, "feeds/quotes.py"]),
     ]
 
 def _manager_loop(stop_event):
@@ -445,7 +450,7 @@ def api_config_update(section):
         restart_all()
         _log("Board settings updated")
     elif section in ("weather", "stock", "jokes", "animations",
-                     "nasa", "wordofday", "history", "countdown"):
+                     "nasa", "wordofday", "history", "countdown", "quotes"):
         cfg[section] = data
         save_config(cfg)
         _cfg_ref = cfg

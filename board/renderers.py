@@ -347,6 +347,7 @@ def render(msg):
     if category == "word":      return render_word(msg)
     if category == "history":   return render_history(msg)
     if category == "countdown": return render_countdown(msg)
+    if category == "quote":     return render_quote(msg)
     return render_generic(msg)
 
 
@@ -1252,3 +1253,16 @@ def render_countdown(msg):
     group.append(count_grp)
     _display.root_group = group
     return _hold(5)
+
+
+def render_quote(msg):
+    """Show a Michael Scott quote in coral orange."""
+    text  = msg.get("text", "")
+    color = 0xFF6633
+    bg    = 0x0A0300
+
+    result = _category_header("QUOTE", color, bg)
+    if result and result != "done":
+        return result
+
+    return _show_text(text, color, bg)

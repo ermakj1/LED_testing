@@ -426,6 +426,7 @@ input:checked + .slider::before { transform: translateX(18px); }
       <button class="tab"        onclick="showTab('wordofday')">Word</button>
       <button class="tab"        onclick="showTab('history')">History</button>
       <button class="tab"        onclick="showTab('countdown')">Countdown</button>
+      <button class="tab"        onclick="showTab('quotes')">Quotes</button>
       <button class="tab"        onclick="showTab('board')">Board</button>
     </div>
     <div class="tab-content"        id="tab-queue"></div>
@@ -437,6 +438,7 @@ input:checked + .slider::before { transform: translateX(18px); }
     <div class="tab-content"        id="tab-wordofday"></div>
     <div class="tab-content"        id="tab-history"></div>
     <div class="tab-content"        id="tab-countdown"></div>
+    <div class="tab-content"        id="tab-quotes"></div>
     <div class="tab-content"        id="tab-board"></div>
   </div>
 
@@ -543,7 +545,7 @@ async function togglePause() {
 // ── Tab switching ──────────────────────────────────────────────────────────
 function showTab(name) {
   currentTab = name;
-  const tabs = ['queue','weather','stock','jokes','animations','nasa','wordofday','history','countdown','board'];
+  const tabs = ['queue','weather','stock','jokes','animations','nasa','wordofday','history','countdown','quotes','board'];
   document.querySelectorAll('.tab').forEach((t, i) => {
     t.classList.toggle('active', tabs[i] === name);
   });
@@ -572,6 +574,7 @@ function renderTab(name) {
     animations: renderAnimations, board: renderBoard,
     nasa: renderNasa, wordofday: renderWordOfDay,
     history: renderHistory, countdown: renderCountdown,
+    quotes: renderQuotes,
   };
   if (fns[name]) fns[name]();
 }
@@ -942,6 +945,32 @@ async function saveCountdown() {
     enabled:          document.getElementById('cd-enabled').checked,
     interval_minutes: +document.getElementById('cd-interval').value,
     events:           _countdownEvents,
+  });
+}
+
+// ── Quotes tab ─────────────────────────────────────────────────────────────
+function renderQuotes() {
+  const q = cfg.quotes || {};
+  document.getElementById('tab-quotes').innerHTML = `
+    <div style="color:var(--muted);font-size:11px;margin-bottom:12px;font-style:italic">
+      30 Michael Scott quotes, cycles through all before repeating.
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Enabled</span>
+      <label class="switch"><input type="checkbox" id="q-enabled" ${q.enabled !== false ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
+    <div class="interval-row">
+      <label>Post every</label>
+      <input type="number" id="q-interval" value="${q.interval_minutes || 60}" min="5" max="360">
+      <span>minutes</span>
+    </div>
+    <button class="btn btn-success btn-full" onclick="saveQuotes()">Save Quote Settings</button>
+  `;
+}
+async function saveQuotes() {
+  await saveSection('quotes', {
+    enabled:          document.getElementById('q-enabled').checked,
+    interval_minutes: +document.getElementById('q-interval').value,
   });
 }
 
