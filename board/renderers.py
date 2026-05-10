@@ -140,12 +140,14 @@ def _show_text(text, color, bg_color, hold_secs=3):
 
 def _category_header(text, color, bg_color, hold=0.9):
     """Flash a bold category label for ~1 second so the viewer knows what's coming."""
+    # Use scale=2 only if the text fits on the 64px panel; fall back to scale=1
+    scale = 2 if len(text) * 6 * 2 <= PANEL_WIDTH else 1
     lbl = label.Label(terminalio.FONT, text=text, color=color)
     lbl.x = 0
     lbl.y = 0
-    grp = displayio.Group(scale=2)
-    grp.x = (PANEL_WIDTH  - len(text) * 6 * 2) // 2
-    grp.y = 8
+    grp = displayio.Group(scale=scale)
+    grp.x = (PANEL_WIDTH - len(text) * 6 * scale) // 2
+    grp.y = (PANEL_HEIGHT - 8 * scale) // 2
     grp.append(lbl)
     outer = displayio.Group()
     outer.append(_bg(bg_color))
