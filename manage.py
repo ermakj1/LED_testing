@@ -160,9 +160,10 @@ def _log(msg):
 # ── Process management ────────────────────────────────────────────────────────
 
 class ManagedProcess:
-    def __init__(self, name, cmd):
-        self.name       = name
-        self.cmd        = cmd
+    def __init__(self, name, cmd, display_name=None):
+        self.name         = name
+        self.display_name = display_name or name
+        self.cmd          = cmd
         self.proc       = None
         self.restart_at = 0
 
@@ -230,7 +231,7 @@ def _build_processes():
         ManagedProcess("wordofday",  [sys.executable, "feeds/wordofday.py"]),
         ManagedProcess("history",    [sys.executable, "feeds/history.py"]),
         ManagedProcess("countdown",  [sys.executable, "feeds/countdown.py"]),
-        ManagedProcess("quotes",     [sys.executable, "feeds/quotes.py"]),
+        ManagedProcess("quotes",     [sys.executable, "feeds/quotes.py"], display_name="Michael Scott"),
     ]
 
 def _manager_loop(stop_event):
@@ -467,9 +468,10 @@ def api_status():
     with _proc_lock:
         feeds = [
             {
-                "name":    p.name,
-                "running": p.running,
-                "enabled": cfg.get(p.name, {}).get("enabled", True),
+                "name":         p.name,
+                "display_name": p.display_name,
+                "running":      p.running,
+                "enabled":      cfg.get(p.name, {}).get("enabled", True),
             }
             for p in _processes
         ]

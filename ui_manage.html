@@ -546,7 +546,7 @@ function renderStatus(feeds, paused) {
     const cls     = paused ? 'disabled' : !f.enabled ? 'disabled' : f.running ? 'running' : 'stopped';
     const title   = f.enabled ? 'Click to disable' : 'Click to enable';
     return `<div class="feed-pill ${cls}" onclick="toggleFeed('${f.name}',${f.enabled})" title="${title}">
-      <span class="dot"></span>${f.name}
+      <span class="dot"></span>${f.display_name || f.name}
     </div>`;
   }).join('');
   if (btn) {
