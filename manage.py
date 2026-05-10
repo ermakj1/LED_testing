@@ -363,6 +363,48 @@ def _board_unregister(cfg):
     except Exception:
         pass
 
+# Feed name → board category/categories it posts under
+_FEED_CATEGORIES = {
+    "weather":   ["weather"],
+    "stock":     ["stock"],
+    "jokes":     ["joke"],
+    "animations":["animation"],
+    "nasa":      ["bitmap"],
+    "wordofday": ["word"],
+    "history":   ["history"],
+    "countdown": ["countdown"],
+    "quotes":    ["quote"],
+}
+
+def _clear_feed_from_board(cfg, feed_name):
+    """Delete all board queue items belonging to a feed that was just disabled."""
+    categories = _FEED_CATEGORIES.get(feed_name)
+    if not categories:
+        return
+    board_url = cfg.get("board_url", "")
+    try:
+        with urllib.request.urlopen(f"{board_url}/", timeout=5) as r:
+            queue = json.loads(r.read()).get("queue", [])
+    except Exception as e:
+        _log(f"Could not fetch board queue to clear {feed_name}: {e}")
+        return
+    removed = 0
+    for item in queue:
+        if item.get("category") in categories:
+            try:
+                req = urllib.request.Request(
+                    f"{board_url}/delete",
+                    data=json.dumps({"id": item["id"]}).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                urllib.request.urlopen(req, timeout=5)
+                removed += 1
+            except Exception as e:
+                _log(f"Failed to delete item {item.get('id')}: {e}")
+    if removed:
+        _log(f"Removed {removed} queued item(s) for disabled feed: {feed_name}")
+
 def _do_clear_queue(cfg):
     board_url = cfg.get("board_url", "")
     try:
@@ -451,11 +493,17 @@ def api_config_update(section):
         _log("Board settings updated")
     elif section in ("weather", "stock", "jokes", "animations",
                      "nasa", "wordofday", "history", "countdown", "quotes"):
+        was_enabled = cfg.get(section, {}).get("enabled", True)
+        now_enabled = data.get("enabled", True)
         cfg[section] = data
         save_config(cfg)
         _cfg_ref = cfg
         restart_feed(section)
         _log(f"{section} config updated")
+        if was_enabled and not now_enabled:
+            threading.Thread(
+                target=_clear_feed_from_board, args=(cfg, section), daemon=True
+            ).start()
     else:
         return jsonify({"ok": False, "reason": "unknown section"}), 400
     return jsonify({"ok": True})
