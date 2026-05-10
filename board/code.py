@@ -12,6 +12,8 @@
 # greets with "Good morning/afternoon/evening" on next detection.
 
 import os
+import io
+import sys
 import time
 import rtc
 import json
@@ -427,6 +429,37 @@ def serve_schema(request: Request):
     }
     return Response(request, json.dumps(schema), content_type="application/json")
 
+CRASH_LOG = "/crash.log"
+
+def _write_crash(category, exc):
+    """Capture traceback to crash.log and to the in-memory log."""
+    buf = io.StringIO()
+    sys.print_exception(exc, buf)
+    tb = buf.getvalue()
+    log(f"RENDER CRASH [{category}]: {exc}")
+    log(tb[:200])   # first 200 chars to in-memory log
+    try:
+        with open(CRASH_LOG, "w") as f:
+            f.write(f"category: {category}\n{tb}")
+    except Exception:
+        pass
+
+@server.route("/crash", "GET")
+def serve_crash(request: Request):
+    try:
+        with open(CRASH_LOG, "r") as f:
+            body = f.read()
+    except OSError:
+        body = "No crash log found."
+    html = (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<title>Crash Log</title>"
+        "<style>body{background:#111;color:#f88;font-family:monospace;font-size:13px;padding:12px;}"
+        "pre{white-space:pre-wrap;word-break:break-all;}</style></head>"
+        "<body><pre>" + body + "</pre></body></html>"
+    )
+    return Response(request, html, content_type="text/html")
+
 @server.route("/log", "GET")
 def serve_log(request: Request):
     lines = "\n".join(_log_lines[-100:])
@@ -592,7 +625,11 @@ while True:
             continue
         current_msg = msg
         log(f"Displaying [{msg.get('category','')}]: {_msg_summary(msg)}")
-        result = renderers.render(msg)
+        try:
+            result = renderers.render(msg)
+        except Exception as e:
+            _write_crash(msg.get("category", "?"), e)
+            result = "done"
         current_msg = None
         _msgs_since_clock += 1
         clear_display()

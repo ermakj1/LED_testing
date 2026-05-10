@@ -1244,8 +1244,10 @@ def render_countdown(msg):
     count_lbl = label.Label(terminalio.FONT, text=count_str, color=num_color)
     count_lbl.x = 0
     count_lbl.y = 0
-    count_grp = displayio.Group(scale=2)
-    count_grp.x = (PANEL_WIDTH - len(count_str) * 6 * 2) // 2
+    # Use scale=2 only if text fits; fall back to scale=1 (same guard as _category_header)
+    c_scale = 2 if len(count_str) * 6 * 2 <= PANEL_WIDTH else 1
+    count_grp = displayio.Group(scale=c_scale)
+    count_grp.x = max(0, (PANEL_WIDTH - len(count_str) * 6 * c_scale) // 2)
     count_grp.y = 14
     count_grp.append(count_lbl)
 
