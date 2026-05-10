@@ -104,13 +104,26 @@ header {
   min-height: 0;
 }
 
+/* ── Resize handle ── */
+.resize-handle {
+  width: 5px;
+  flex-shrink: 0;
+  background: var(--border);
+  cursor: col-resize;
+  transition: background 0.15s;
+  position: relative;
+  z-index: 10;
+}
+.resize-handle:hover,
+.resize-handle.dragging { background: var(--primary); }
+
 /* ── Log panel ── */
 .log-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  border-right: 1px solid var(--border);
+  min-width: 120px;
+  overflow: hidden;
 }
 .log-toolbar {
   display: flex;
@@ -150,6 +163,7 @@ header {
 .config-panel {
   width: 360px;
   flex-shrink: 0;
+  min-width: 200px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -414,8 +428,11 @@ input:checked + .slider::before { transform: translateX(18px); }
     </div>
   </div>
 
+  <!-- Resize handle -->
+  <div class="resize-handle" id="resize-handle"></div>
+
   <!-- Config panel -->
-  <div class="config-panel">
+  <div class="config-panel" id="config-panel">
     <div class="tabs">
       <button class="tab"        onclick="showTab('queue')">Queue</button>
       <button class="tab active" onclick="showTab('weather')">Weather</button>
@@ -1124,6 +1141,39 @@ async function qDrop(e) {
 document.addEventListener('dragend', () => {
   document.querySelectorAll('.queue-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
 });
+
+// ── Resizable split pane ───────────────────────────────────────────────────
+(function() {
+  const handle      = document.getElementById('resize-handle');
+  const configPanel = document.getElementById('config-panel');
+  let dragging = false;
+  let startX, startW;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startX   = e.clientX;
+    startW   = configPanel.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor    = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta  = startX - e.clientX;           // drag left = wider config
+    const newW   = Math.min(Math.max(startW + delta, 200), window.innerWidth - 200);
+    configPanel.style.width = newW + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor     = '';
+    document.body.style.userSelect = '';
+  });
+})();
 
 // ── Init ───────────────────────────────────────────────────────────────────
 connectLogs();
