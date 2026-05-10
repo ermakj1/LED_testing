@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-LED Display Manager — feeds + web UI.
+Director — LED Display feed manager.
 
-Starts feed subprocesses, serves a web management UI on port 8099,
-and handles motion callbacks from the board.
+Runs on the Raspberry Pi. Starts and supervises all feed subprocesses,
+serves the management web UI on port 8099, and handles motion callbacks
+from the Panel (MatrixPortal S3 LED board).
 """
 
 import json

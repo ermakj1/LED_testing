@@ -1,127 +1,175 @@
 # LED Display
 
-A CircuitPython-powered RGB LED matrix display with a WiFi API, animated message queue, and sensor integration.
+A 64×32 RGB LED matrix display system with two components: **Director** (Pi) and **Panel** (board).
+
+---
+
+## Components
+
+### Panel
+The LED matrix itself. Runs CircuitPython on an Adafruit MatrixPortal S3. Accepts messages over WiFi via HTTP, maintains a queue, and renders each message on the display. Knows nothing about where messages come from — it just displays them.
+
+- Hostname: `matrixportal.local` (port 8080)
+- Code lives in `board/`
+
+### Director
+The Raspberry Pi service that manages all the feeds and sends content to the Panel. Runs in Docker. Provides a web management UI and handles scheduling, config, and feed health.
+
+- Web UI: `http://<pi-ip>:8099`
+- Code: `manage.py` + `feeds/`
+
+---
 
 ## Hardware
 
 | Part | Details |
 |------|---------|
-| [Adafruit MatrixPortal S3](https://www.adafruit.com/product/5778) | ESP32-S3 based controller |
-| 64×32 RGB LED Matrix | HUB75 interface, connected directly to MatrixPortal |
-| [Mini PIR Motion Sensor](https://www.adafruit.com/product/4871) | Wired to A1, 3.3V, GND |
+| [Adafruit MatrixPortal S3](https://www.adafruit.com/product/5778) | ESP32-S3 controller |
+| 64×32 RGB LED Matrix | HUB75 interface |
+| [Mini PIR Motion Sensor](https://www.adafruit.com/product/4871) | Wired to A3 |
+| Raspberry Pi (any model) | Runs Director in Docker |
 
 ### PIR Wiring
 
 | PIR pin | MatrixPortal S3 |
 |---------|----------------|
-| VIN     | 3 (3.3V)        |
-| GND     | GND             |
-| OUT     | A3              |
+| VIN     | 3.3V           |
+| GND     | GND            |
+| OUT     | A3             |
 
-## Software
-
-- **CircuitPython 10.x** on the board
-- Python 3 on the host machine for feed scripts (no extra packages required)
+---
 
 ## Setup
 
-1. Copy `settings.toml.example` to `/Volumes/CIRCUITPY/settings.toml` and fill in your WiFi credentials and a web API password
-2. Deploy code to the board: `./deploy.sh`
-3. Run feed scripts from your computer: `python3 feeds/stock.py`, `python3 feeds/weather.py`
-4. Open the web UI: `http://matrixportal.local:8080/ui`
+### Panel (first time)
+1. Flash CircuitPython 10.x onto the MatrixPortal S3
+2. Copy `settings.toml.example` to `/Volumes/CIRCUITPY/settings.toml` and fill in WiFi credentials
+3. Deploy board code: `scripts/deploy.sh` (USB auto-detected, or `--wifi`)
 
-## Deploying
-
+### Director (Pi)
 ```bash
-./deploy.sh              # USB deploy (board plugged into laptop)
-./deploy.sh --wifi       # WiFi deploy (board on charger)
-./deploy.sh --wifi --with-lib  # WiFi deploy including lib/ folder
+git clone <repo> ~/LED_testing
+cd ~/LED_testing
+docker compose up -d
 ```
 
-WiFi deploy uses the board's own `/upload` endpoint on port 8080. The board must be running and on the same network.
+The Director web UI will be at `http://<pi-ip>:8099`.
 
-## Board endpoints (port 8080)
+---
+
+## Deploying to the Panel
+
+```bash
+scripts/deploy.sh              # auto-detects USB or WiFi
+scripts/deploy.sh --wifi       # force WiFi deploy
+scripts/deploy.sh --with-lib   # include lib/ folder
+```
+
+WiFi deploy pushes files directly to the Panel's `/upload` endpoint and triggers a soft reload.
+
+---
+
+## Feeds
+
+All feeds run on the Director (Pi) and post messages to the Panel.
+
+| Feed | Description | Default interval |
+|------|-------------|-----------------|
+| `weather.py` | Current conditions + forecast from Open-Meteo | 30 min |
+| `stock.py` | Stock prices from Yahoo Finance (market hours) | 5 min |
+| `jokes.py` | Random jokes from JokeAPI | 30 min |
+| `animations.py` | Decorative animations | 20 min |
+| `nasa.py` | NASA Astronomy Picture of the Day | 24 hr |
+| `wordofday.py` | Word of the day + definition | 24 hr |
+| `history.py` | This day in history facts | 60 min |
+| `countdown.py` | Days until configured events | 60 min |
+| `quotes.py` | Michael Scott quotes | 60 min |
+
+All feeds are configured and toggled from the Director web UI.
+
+---
+
+## Panel endpoints (port 8080)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/` | GET | Current queue as JSON |
 | `/add` | POST | Add a message to the queue |
 | `/delete` | POST | Delete a message by id |
 | `/clear` | POST | Clear the queue |
-| `/` | GET | Current queue as JSON |
-| `/schema` | GET | Message categories and field definitions |
-| `/log` | GET | Live log viewer (auto-refreshes) |
-| `/ui` | GET | Web control panel |
-| `/wake` | POST | Wake the display from sleep |
-| `/pir/enable` | POST | Enable motion detection |
-| `/pir/disable` | POST | Disable motion detection |
-| `/usb/enable` | POST | Enable USB drive (board reboots) |
-| `/usb/disable` | POST | Disable USB drive (board reboots) |
-| `/upload` | POST | Upload a file (used by deploy.sh) |
-| `/reload` | POST | Soft-reload the board |
+| `/reorder` | POST | Reorder queue by id list |
+| `/schema` | GET | Message format reference |
+| `/log` | GET | Live log viewer |
+| `/upload` | POST | Upload a file (used by deploy script) |
+| `/reload` | POST | Soft-reload the Panel |
+| `/wake` | POST | Wake from sleep |
+| `/register` | POST | Register a motion callback URL |
+| `/pir/enable` | POST | Enable motion sensor |
+| `/pir/disable` | POST | Disable motion sensor |
+| `/usb/enable` | POST | Enable USB drive (reboots) |
+| `/usb/disable` | POST | Disable USB drive (reboots) |
+
+---
 
 ## Message categories
 
-Send a POST to `/add` with JSON:
+POST to `http://matrixportal.local:8080/add`:
 
-**News**
 ```json
-{"category": "news", "text": "Headline here", "ttl_minutes": 60}
+{"category": "weather", "condition": "sunny", "high": 75, "low": 52, "precip": 10, "city": "Kirkland"}
+{"category": "stock",   "symbol": "MSFT", "price": 415.00, "change": 0.28}
+{"category": "joke",    "setup": "Why did the...", "delivery": "Because..."}
+{"category": "history", "year": 1969, "text": "Apollo 11 lands on the moon"}
+{"category": "word",    "word": "ephemeral", "pos": "adjective", "definition": "lasting a very short time"}
+{"category": "countdown","name": "Summer", "days": 42}
+{"category": "quote",   "text": "That's what she said."}
+{"category": "news",    "text": "Headline here"}
+{"category": "animation","type": "fireworks", "duration": 10}
+{"category": "bitmap",  "path": "/nasa.bmp", "caption": "Nebula"}
 ```
 
-**Weather**
-```json
-{"category": "weather", "condition": "sunny", "high": 75, "low": 52, "precip": 10, "ttl_minutes": 120}
+All messages accept `ttl_minutes` (default 60).
+
+---
+
+## Panel behavior
+
+- **Clock** shown when queue is empty. Color shifts with time of day.
+- **Sleep** after 5 min of no PIR motion. UP button wakes, DOWN button sleeps.
+- **Category headers** flash briefly before each message so you know what's coming (JOKE, NEWS, HISTORY, etc.).
+- **Scroll speed** ~80 px/sec.
+
+---
+
+## Project structure
+
 ```
+board/          Panel code (deployed to MatrixPortal)
+  code.py       Main loop, HTTP server, queue management
+  renderers.py  One render function per message category
+  ui.html       Panel's built-in web UI
 
-**Stock**
-```json
-{"category": "stock", "symbol": "MSFT", "price": 407.78, "change": -2.3, "ttl_minutes": 5}
+feeds/          Director feed scripts (run on Pi)
+  config.json   Shared config (board URL, intervals, enabled flags)
+  util.py       Shared helpers (single_instance, is_network_error)
+  weather.py
+  stock.py
+  jokes.py
+  animations.py
+  nasa.py
+  wordofday.py
+  history.py
+  countdown.py
+  quotes.py
+  image_pipeline.py
+
+scripts/
+  deploy.sh         Deploy board/ files to Panel (USB or WiFi)
+  watchdog.py       Standalone feed runner (alternative to Docker)
+  led-feeds.service Systemd unit for watchdog (alternative to Docker)
+
+manage.py       Director entry point
+ui_manage.html  Director web UI
+Dockerfile      Director container definition
+docker-compose.yml
 ```
-
-**Calendar**
-```json
-{"category": "calendar", "time": "2pm", "text": "Dentist", "ttl_minutes": 120}
-```
-
-**Text** (generic scrolling)
-```json
-{"category": "text", "text": "Hello world", "ttl_minutes": 60}
-```
-
-## Animations
-
-Send a POST to `/add` with `category: animation` and a `type` field:
-
-| Type | Description |
-|------|-------------|
-| `fireworks` | Colored particle bursts from random points |
-| `rainbow` | Full-panel hue sweep with brightness wave |
-| `plasma` | Flowing sine-wave color fields |
-| `fire` | Bottom-up flame simulation |
-| `life` | Conway's Game of Life, re-randomizes on stagnation |
-| `cube` | Spinning wireframe cube with perspective |
-| `dvd` | Bouncing colored rectangle |
-| `dvd_text` | Bouncing "DVD" text |
-| `matrix` | Green falling pixel streams |
-
-All animations also accessible from the web UI (`/ui`) and via `feeds/animations.py`.
-
-Optional field: `duration` (seconds, default 10).
-
-## Feed scripts
-
-| Script | Description |
-|--------|-------------|
-| `feeds/stock.py` | MSFT stock price from Yahoo Finance, every 5 min during market hours |
-| `feeds/weather.py` | Kirkland WA weather from Open-Meteo, every 30 min |
-| `feeds/jokes.py` | Random joke from JokeAPI, every 30 min |
-| `feeds/animations.py` | Random decorative animation on a schedule |
-
-All feed scripts support `--once` to send a single update and exit, and `--interval N` to change the update frequency.
-
-## Board behavior
-
-- **Clock** shown when queue is empty. Color shifts with time of day (orange at dawn, white during day, amber at dusk, blue at night). Seconds shown as a progress bar along the bottom. Top-right pixel turns red for 2s on motion detection.
-- **Sleep** triggered by PIR inactivity timeout (5 min). UP button wakes, DOWN button sleeps. Can also be controlled from the web UI.
-- **Person detected** — display_agent receives a `person_detected` callback when the board wakes via PIR or UP button.
-- **USB drive** disabled by default (enables WiFi deploy). Use the web UI to re-enable USB when you need to update libraries.

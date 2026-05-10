@@ -10,9 +10,9 @@ services:
     ports:
       - "8123:8123"
 
-  manage:
+  director:
     build: .
-    container_name: led-manage
+    container_name: director
     restart: unless-stopped
     environment:
       - TZ=America/Los_Angeles
