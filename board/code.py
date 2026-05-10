@@ -450,15 +450,18 @@ def serve_crash(request: Request):
         with open(CRASH_LOG, "r") as f:
             body = f.read()
     except OSError:
-        body = "No crash log found."
-    html = (
-        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-        "<title>Crash Log</title>"
-        "<style>body{background:#111;color:#f88;font-family:monospace;font-size:13px;padding:12px;}"
-        "pre{white-space:pre-wrap;word-break:break-all;}</style></head>"
-        "<body><pre>" + body + "</pre></body></html>"
-    )
-    return Response(request, html, content_type="text/html")
+        body = ""
+    if not body:
+        return Response(request, '{"crash":null}', content_type="application/json")
+    return Response(request, json.dumps({"crash": body}), content_type="application/json")
+
+@server.route("/crash/clear", "POST")
+def clear_crash(request: Request):
+    try:
+        os.remove(CRASH_LOG)
+    except OSError:
+        pass
+    return Response(request, '{"ok":true}', content_type="application/json")
 
 @server.route("/log", "GET")
 def serve_log(request: Request):

@@ -137,6 +137,9 @@ _cfg_ref   = None
 _proc_lock = threading.Lock()
 _paused    = False
 
+_panel_crash      = None   # None or {"detected_at": str, "text": str}
+_panel_crash_lock = threading.Lock()
+
 def _broadcast(line):
     with _log_history_lock:
         _log_history.append(line)
@@ -233,6 +236,31 @@ def _build_processes():
         ManagedProcess("countdown",  [sys.executable, "feeds/countdown.py"]),
         ManagedProcess("quotes",     [sys.executable, "feeds/quotes.py"], display_name="Michael Scott"),
     ]
+
+def _panel_crash_poller():
+    """Background thread: polls the Panel's /crash endpoint every 60s."""
+    global _panel_crash
+    while True:
+        time.sleep(60)
+        cfg = _cfg_ref or load_config()
+        board_url = cfg.get("board_url", "")
+        if not board_url:
+            continue
+        try:
+            with urllib.request.urlopen(f"{board_url}/crash", timeout=5) as r:
+                data = json.loads(r.read())
+            crash_text = data.get("crash")
+            if crash_text:
+                with _panel_crash_lock:
+                    if _panel_crash is None:
+                        _panel_crash = {
+                            "detected_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "text": crash_text,
+                        }
+                        _log(f"⚠ PANEL CRASH DETECTED — check Director UI for details")
+        except Exception:
+            pass
+
 
 def _manager_loop(stop_event):
     while not stop_event.is_set():
@@ -559,6 +587,31 @@ def api_countdown_events_save():
     _log(f"Countdown events saved ({len(events)} events)")
     return jsonify({"ok": True})
 
+@flask_app.route("/api/panel/crash")
+def api_panel_crash():
+    with _panel_crash_lock:
+        return jsonify({"crash": _panel_crash})
+
+@flask_app.route("/api/panel/crash/clear", methods=["POST"])
+def api_panel_crash_clear():
+    global _panel_crash
+    # Clear on Director
+    with _panel_crash_lock:
+        _panel_crash = None
+    # Clear on Panel
+    board_url = (_cfg_ref or load_config()).get("board_url", "")
+    try:
+        req = urllib.request.Request(
+            f"{board_url}/crash/clear", data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as e:
+        _log(f"Could not clear crash log on Panel: {e}")
+    _log("Panel crash log cleared")
+    return jsonify({"ok": True})
+
 @flask_app.route("/api/geocode", methods=["POST"])
 def api_geocode():
     data  = freq.get_json(force=True)
@@ -640,6 +693,7 @@ def main():
 
     stop_event = threading.Event()
     threading.Thread(target=_manager_loop, args=(stop_event,), daemon=True).start()
+    threading.Thread(target=_panel_crash_poller, daemon=True).start()
 
     callback_url = _start_callback_server(cfg)
     if callback_url:
