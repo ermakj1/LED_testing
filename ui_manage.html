@@ -64,7 +64,12 @@ header {
   font-weight: 500;
   background: var(--surface2);
   border: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s, opacity 0.15s;
 }
+.feed-pill:hover         { border-color: var(--primary); }
+.feed-pill.disabled      { opacity: 0.45; }
 .feed-pill .dot {
   width: 7px;
   height: 7px;
@@ -538,12 +543,35 @@ function renderStatus(feeds, paused) {
   const el  = document.getElementById('feed-status');
   const btn = document.getElementById('pause-btn');
   el.innerHTML = feeds.map(f => {
-    const cls = paused ? 'disabled' : !f.enabled ? 'disabled' : f.running ? 'running' : 'stopped';
-    return `<div class="feed-pill ${cls}"><span class="dot"></span>${f.name}</div>`;
+    const cls     = paused ? 'disabled' : !f.enabled ? 'disabled' : f.running ? 'running' : 'stopped';
+    const title   = f.enabled ? 'Click to disable' : 'Click to enable';
+    return `<div class="feed-pill ${cls}" onclick="toggleFeed('${f.name}',${f.enabled})" title="${title}">
+      <span class="dot"></span>${f.name}
+    </div>`;
   }).join('');
   if (btn) {
     btn.textContent = paused ? '▶ Resume Feeds' : '⏸ Pause Feeds';
     btn.className   = paused ? 'btn btn-success' : 'btn btn-warning';
+  }
+}
+
+async function toggleFeed(name, currentlyEnabled) {
+  try {
+    const r = await fetch(`/api/config/${name}`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify({...(cfg[name] || {}), enabled: !currentlyEnabled}),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      cfg = await (await fetch('/api/config')).json();
+      toast(`${name} ${!currentlyEnabled ? 'enabled' : 'disabled'}`, 'ok');
+      pollStatus();
+    } else {
+      toast('Failed: ' + (d.reason || '?'), 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
   }
 }
 
