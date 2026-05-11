@@ -1,5 +1,5 @@
 {
-  "board_url": "http://matrixportal.local:8080",
+  "board_url": "http://192.168.86.178:8080",
   "callback_host": "192.168.86.25",
   "ha_webhook_motion": "http://homeassistant:8123/api/webhook/led_board_person_detected",
   "weather": {
