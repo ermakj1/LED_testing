@@ -1212,7 +1212,7 @@ def render_history(msg):
 
 
 def render_countdown(msg):
-    """Live countdown: name + d/h on line 2, m/s on line 3, updates every second."""
+    """Live DD:HH:MM:SS countdown with narrow custom colons, updates every second."""
     name        = msg.get("name", "Event")
     target_date = msg.get("target_date", "")
     bg          = 0x080010
@@ -1231,83 +1231,84 @@ def render_countdown(msg):
     def _remaining():
         return max(0, int(target_secs - time.time())) if target_secs else 0
 
-    def _fmt(secs):
-        if secs <= 0:
-            return "TODAY!", "", 0xFF4400
-        d = secs // 86400
+    def _color(d):
+        if d > 30: return 0x00AAFF
+        if d > 7:  return 0xFFFF00
+        if d > 0:  return 0xFFAA00
+        return 0xFF6600
+
+    def _fields(secs):
+        d = min(secs // 86400, 99)
         h = (secs % 86400) // 3600
         m = (secs % 3600) // 60
         s = secs % 60
-        if d > 30:
-            col = 0x00AAFF
-        elif d > 7:
-            col = 0xFFFF00
-        elif d > 0:
-            col = 0xFFAA00
-        else:
-            col = 0xFF6600
-        if d > 0:
-            return f"{d}d {h}h", f"{m}m {s}s", col
-        elif h > 0:
-            return f"{h}h {m}m", f"{s}s", col
-        elif m > 0:
-            return f"{m}m {s}s", "", col
-        else:
-            return f"{s}s", "", col
+        return d, h, m, s
+
+    # Layout: 4 two-digit fields × 12px + 3 narrow colons × 3px = 57px total
+    # Centered: left margin = (64 - 57) // 2 = 3
+    X0  = (PANEL_WIDTH - 57) // 2   # = 3
+    CY  = 22                         # vertical center of countdown row
+    CTY = CY - 4                     # top-left y for colon bitmaps (8px tall)
+
+    def _make_colon(x, color):
+        """3×8 bitmap with two 1×2 dot blocks — visually a narrow colon."""
+        bm  = displayio.Bitmap(3, 8, 2)
+        pal = displayio.Palette(2)
+        pal[0] = 0x000000
+        pal[1] = color
+        bm[1, 2] = 1;  bm[1, 3] = 1   # top dot
+        bm[1, 5] = 1;  bm[1, 6] = 1   # bottom dot
+        return displayio.TileGrid(bm, pixel_shader=pal, x=x, y=CTY), pal
 
     secs = _remaining()
-    l2, l3, col = _fmt(secs)
+    d, h, m, s = _fields(secs)
+    col = _color(d)
 
-    # Name: use a group so we can animate x for scrolling
+    lbl_d = label.Label(terminalio.FONT, text=f"{d:02d}", color=col, x=X0,      y=CY)
+    lbl_h = label.Label(terminalio.FONT, text=f"{h:02d}", color=col, x=X0 + 15, y=CY)
+    lbl_m = label.Label(terminalio.FONT, text=f"{m:02d}", color=col, x=X0 + 30, y=CY)
+    lbl_s = label.Label(terminalio.FONT, text=f"{s:02d}", color=col, x=X0 + 45, y=CY)
+    tg1, pal1 = _make_colon(X0 + 12, col)
+    tg2, pal2 = _make_colon(X0 + 27, col)
+    tg3, pal3 = _make_colon(X0 + 42, col)
+
+    # Name group (scrollable)
     name_lbl = label.Label(terminalio.FONT, text=name, color=0xCCCCCC)
     name_lbl.x = 0
     name_lbl.y = 0
     name_grp = displayio.Group()
-    name_grp.y = 4
+    name_grp.y = 6
     name_grp.append(name_lbl)
     name_w = len(name) * 6
-    if name_w <= PANEL_WIDTH:
-        name_grp.x = max(0, (PANEL_WIDTH - name_w) // 2)
-    else:
-        name_grp.x = PANEL_WIDTH  # start off-screen right for scroll
-
-    lbl2 = label.Label(terminalio.FONT, text=l2, color=col)
-    lbl2.x = 0
-    lbl2.y = 0
-    s2 = 2 if (not l3 and len(l2) * 12 <= PANEL_WIDTH) else 1
-    grp2 = displayio.Group(scale=s2)
-    grp2.x = max(0, (PANEL_WIDTH - len(l2) * 6 * s2) // 2)
-    grp2.y = 13 if l3 else 19
-    grp2.append(lbl2)
-
-    lbl3 = label.Label(terminalio.FONT, text=l3 if l3 else " ", color=col)
-    lbl3.x = max(0, (PANEL_WIDTH - len(l3) * 6) // 2) if l3 else 0
-    lbl3.y = 25
+    name_grp.x = max(0, (PANEL_WIDTH - name_w) // 2) if name_w <= PANEL_WIDTH else PANEL_WIDTH
 
     group = displayio.Group()
     group.append(_bg(bg))
     group.append(name_grp)
-    group.append(grp2)
-    group.append(lbl3)
+    group.append(lbl_d)
+    group.append(tg1)
+    group.append(lbl_h)
+    group.append(tg2)
+    group.append(lbl_m)
+    group.append(tg3)
+    group.append(lbl_s)
     _display.root_group = group
 
-    def _update_countdown():
-        nonlocal s2
+    def _update():
+        nonlocal col
         secs = _remaining()
-        nl2, nl3, ncol = _fmt(secs)
-        ns2 = 2 if (not nl3 and len(nl2) * 12 <= PANEL_WIDTH) else 1
-        if ns2 != s2:
-            return "rebuild"
-        if nl2 != lbl2.text or ncol != lbl2.color:
-            lbl2.text  = nl2
-            lbl2.color = ncol
-            grp2.x = max(0, (PANEL_WIDTH - len(nl2) * 6 * s2) // 2)
-        nl3_disp = nl3 if nl3 else " "
-        if nl3_disp != lbl3.text or ncol != lbl3.color:
-            lbl3.text  = nl3_disp
-            lbl3.color = ncol
-            lbl3.x = max(0, (PANEL_WIDTH - len(nl3) * 6) // 2) if nl3 else 0
-        return None
+        d, h, m, s = _fields(secs)
+        new_col = _color(d)
+        lbl_d.text = f"{d:02d}"
+        lbl_h.text = f"{h:02d}"
+        lbl_m.text = f"{m:02d}"
+        lbl_s.text = f"{s:02d}"
+        if new_col != col:
+            col = new_col
+            for lb in (lbl_d, lbl_h, lbl_m, lbl_s):
+                lb.color = new_col
+            for pal in (pal1, pal2, pal3):
+                pal[1] = new_col
 
     prev = -1
 
@@ -1321,11 +1322,9 @@ def render_countdown(msg):
             cur = int(time.monotonic())
             if cur != prev:
                 prev = cur
-                if _update_countdown() == "rebuild":
-                    return render_countdown(msg)
+                _update()
             name_grp.x -= 1
             time.sleep(SCROLL_DELAY)
-        # After scroll: show truncated name centered
         name_short = name[:10]
         name_lbl.text = name_short
         name_grp.x = max(0, (PANEL_WIDTH - len(name_short) * 6) // 2)
@@ -1339,8 +1338,7 @@ def render_countdown(msg):
         cur = int(time.monotonic())
         if cur != prev:
             prev = cur
-            if _update_countdown() == "rebuild":
-                return render_countdown(msg)
+            _update()
         time.sleep(0.05)
     return "done"
 
