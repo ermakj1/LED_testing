@@ -1212,51 +1212,104 @@ def render_history(msg):
 
 
 def render_countdown(msg):
-    """Show countdown: event name + days remaining."""
-    name = msg.get("name", "Event")
-    days = int(msg.get("days", 0))
-    hours = int(msg.get("hours", 0))
-    bg   = 0x080010
+    """Live countdown: name + d/h on line 2, m/s on line 3, updates every second."""
+    name        = msg.get("name", "Event")
+    target_date = msg.get("target_date", "")
+    bg          = 0x080010
 
-    # Color shifts from white → yellow → orange as event approaches
-    if days == 0:
-        num_color = 0xFF4400  # today! orange-red
-    elif days <= 7:
-        num_color = 0xFFAA00  # soon — amber
-    elif days <= 30:
-        num_color = 0xFFFF00  # within a month — yellow
-    else:
-        num_color = 0x00AAFF  # far away — blue
+    # Compute target in board-local seconds using time.mktime
+    target_secs = 0
+    if len(target_date) == 10:
+        try:
+            yr = int(target_date[0:4])
+            mo = int(target_date[5:7])
+            dy = int(target_date[8:10])
+            target_secs = time.mktime(time.struct_time((yr, mo, dy, 0, 0, 0, 0, -1, -1)))
+        except Exception:
+            pass
 
-    # Line 1: event name (truncated)
-    name_lbl = label.Label(terminalio.FONT, text=name[:10], color=0xCCCCCC)
-    name_lbl.x = (PANEL_WIDTH - len(name[:10]) * 6) // 2
-    name_lbl.y = 6
+    def _remaining():
+        return max(0, int(target_secs - time.time())) if target_secs else 0
 
-    # Line 2: days count (large)
-    if days == 0:
-        count_str = "TODAY!"
-    elif days == 1 and hours > 0:
-        count_str = f"{hours}h"
-    else:
-        count_str = f"{days}d"
+    def _fmt(secs):
+        if secs <= 0:
+            return "TODAY!", "", 0xFF4400
+        d = secs // 86400
+        h = (secs % 86400) // 3600
+        m = (secs % 3600) // 60
+        s = secs % 60
+        if d > 30:
+            col = 0x00AAFF
+        elif d > 7:
+            col = 0xFFFF00
+        elif d > 0:
+            col = 0xFFAA00
+        else:
+            col = 0xFF6600
+        if d > 0:
+            return f"{d}d {h}h", f"{m}m {s}s", col
+        elif h > 0:
+            return f"{h}h {m}m", f"{s}s", col
+        elif m > 0:
+            return f"{m}m {s}s", "", col
+        else:
+            return f"{s}s", "", col
 
-    count_lbl = label.Label(terminalio.FONT, text=count_str, color=num_color)
-    count_lbl.x = 0
-    count_lbl.y = 0
-    # Use scale=2 only if text fits; fall back to scale=1 (same guard as _category_header)
-    c_scale = 2 if len(count_str) * 6 * 2 <= PANEL_WIDTH else 1
-    count_grp = displayio.Group(scale=c_scale)
-    count_grp.x = max(0, (PANEL_WIDTH - len(count_str) * 6 * c_scale) // 2)
-    count_grp.y = 14
-    count_grp.append(count_lbl)
+    name_short = name[:10]
+    name_lbl = label.Label(terminalio.FONT, text=name_short, color=0xCCCCCC)
+    name_lbl.x = max(0, (PANEL_WIDTH - len(name_short) * 6) // 2)
+    name_lbl.y = 4
+
+    secs = _remaining()
+    l2, l3, col = _fmt(secs)
+
+    lbl2 = label.Label(terminalio.FONT, text=l2, color=col)
+    lbl2.x = 0
+    lbl2.y = 0
+    # Use scale=2 for line 2 only when no line 3 (extra space) and it fits
+    s2 = 2 if (not l3 and len(l2) * 12 <= PANEL_WIDTH) else 1
+    grp2 = displayio.Group(scale=s2)
+    grp2.x = max(0, (PANEL_WIDTH - len(l2) * 6 * s2) // 2)
+    grp2.y = 13 if l3 else 19
+    grp2.append(lbl2)
+
+    lbl3 = label.Label(terminalio.FONT, text=l3 if l3 else " ", color=col)
+    lbl3.x = max(0, (PANEL_WIDTH - len(l3) * 6) // 2) if l3 else 0
+    lbl3.y = 25
 
     group = displayio.Group()
     group.append(_bg(bg))
     group.append(name_lbl)
-    group.append(count_grp)
+    group.append(grp2)
+    group.append(lbl3)
     _display.root_group = group
-    return _hold(5)
+
+    end  = time.monotonic() + 30
+    prev = -1
+    while time.monotonic() < end:
+        action = _poll()
+        if action:
+            return action
+        cur = int(time.monotonic())
+        if cur != prev:
+            prev = cur
+            secs = _remaining()
+            nl2, nl3, ncol = _fmt(secs)
+            ns2 = 2 if (not nl3 and len(nl2) * 12 <= PANEL_WIDTH) else 1
+            if ns2 != s2:
+                # scale transition — rebuild (rare, only near 1-hour mark)
+                return render_countdown(msg)
+            if nl2 != lbl2.text or ncol != lbl2.color:
+                lbl2.text  = nl2
+                lbl2.color = ncol
+                grp2.x = max(0, (PANEL_WIDTH - len(nl2) * 6 * s2) // 2)
+            nl3_disp = nl3 if nl3 else " "
+            if nl3_disp != lbl3.text or ncol != lbl3.color:
+                lbl3.text  = nl3_disp
+                lbl3.color = ncol
+                lbl3.x = max(0, (PANEL_WIDTH - len(nl3) * 6) // 2) if nl3 else 0
+        time.sleep(0.05)
+    return "done"
 
 
 def render_quote(msg):

@@ -50,10 +50,11 @@ def get_ttl():
     return load_config().get("countdown", {}).get("ttl_minutes", 65)
 
 
-def post_to_board(board_url, name, days, hours, ttl_minutes):
+def post_to_board(board_url, name, target_date, days, hours, ttl_minutes):
     payload = {
         "category":    "countdown",
         "name":        name,
+        "target_date": target_date,
         "days":        days,
         "hours":       hours,
         "ttl_minutes": ttl_minutes,
@@ -103,7 +104,7 @@ def send_all():
         hours = int(total_seconds // 3600) if delta.days <= 1 else 0
 
         try:
-            result = post_to_board(board_url, name, delta.days, hours, ttl)
+            result = post_to_board(board_url, name, date_str, delta.days, hours, ttl)
             log(f"Countdown '{name}': {delta.days}d {hours}h -> {result}")
         except Exception as e:
             friendly = is_network_error(e)
