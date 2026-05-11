@@ -3,4 +3,4 @@
 # Run this on the Pi after changes are pushed from the Mac.
 
 cd "$(dirname "$0")/.."
-git pull && docker compose down && docker rm -f director 2>/dev/null; docker compose up -d --build director
+git pull && docker compose down && docker rm -f director homeassistant 2>/dev/null; docker compose up -d --build director
