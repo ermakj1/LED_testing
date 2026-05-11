@@ -146,7 +146,7 @@ def notify_callback(event, board_time=None):
             t = time.localtime()
             ms = int((mono % 1) * 1000)
             board_time = f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}.{ms:03d}"
-        _requests.post(callback_url, json={"event": event, "board_time": board_time})
+        _requests.post(callback_url, json={"event": event, "board_time": board_time}, timeout=5)
     except Exception as e:
         log(f"Callback failed: {e}")
 
