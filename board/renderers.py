@@ -1255,18 +1255,25 @@ def render_countdown(msg):
         else:
             return f"{s}s", "", col
 
-    name_short = name[:10]
-    name_lbl = label.Label(terminalio.FONT, text=name_short, color=0xCCCCCC)
-    name_lbl.x = max(0, (PANEL_WIDTH - len(name_short) * 6) // 2)
-    name_lbl.y = 4
-
     secs = _remaining()
     l2, l3, col = _fmt(secs)
+
+    # Name: use a group so we can animate x for scrolling
+    name_lbl = label.Label(terminalio.FONT, text=name, color=0xCCCCCC)
+    name_lbl.x = 0
+    name_lbl.y = 0
+    name_grp = displayio.Group()
+    name_grp.y = 4
+    name_grp.append(name_lbl)
+    name_w = len(name) * 6
+    if name_w <= PANEL_WIDTH:
+        name_grp.x = max(0, (PANEL_WIDTH - name_w) // 2)
+    else:
+        name_grp.x = PANEL_WIDTH  # start off-screen right for scroll
 
     lbl2 = label.Label(terminalio.FONT, text=l2, color=col)
     lbl2.x = 0
     lbl2.y = 0
-    # Use scale=2 for line 2 only when no line 3 (extra space) and it fits
     s2 = 2 if (not l3 and len(l2) * 12 <= PANEL_WIDTH) else 1
     grp2 = displayio.Group(scale=s2)
     grp2.x = max(0, (PANEL_WIDTH - len(l2) * 6 * s2) // 2)
@@ -1279,13 +1286,52 @@ def render_countdown(msg):
 
     group = displayio.Group()
     group.append(_bg(bg))
-    group.append(name_lbl)
+    group.append(name_grp)
     group.append(grp2)
     group.append(lbl3)
     _display.root_group = group
 
-    end  = time.monotonic() + 30
+    def _update_countdown():
+        nonlocal s2
+        secs = _remaining()
+        nl2, nl3, ncol = _fmt(secs)
+        ns2 = 2 if (not nl3 and len(nl2) * 12 <= PANEL_WIDTH) else 1
+        if ns2 != s2:
+            return "rebuild"
+        if nl2 != lbl2.text or ncol != lbl2.color:
+            lbl2.text  = nl2
+            lbl2.color = ncol
+            grp2.x = max(0, (PANEL_WIDTH - len(nl2) * 6 * s2) // 2)
+        nl3_disp = nl3 if nl3 else " "
+        if nl3_disp != lbl3.text or ncol != lbl3.color:
+            lbl3.text  = nl3_disp
+            lbl3.color = ncol
+            lbl3.x = max(0, (PANEL_WIDTH - len(nl3) * 6) // 2) if nl3 else 0
+        return None
+
     prev = -1
+
+    # Phase 1: scroll name if it doesn't fit
+    if name_w > PANEL_WIDTH:
+        scroll_end = -name_w
+        while name_grp.x > scroll_end:
+            action = _poll()
+            if action:
+                return action
+            cur = int(time.monotonic())
+            if cur != prev:
+                prev = cur
+                if _update_countdown() == "rebuild":
+                    return render_countdown(msg)
+            name_grp.x -= 1
+            time.sleep(SCROLL_DELAY)
+        # After scroll: show truncated name centered
+        name_short = name[:10]
+        name_lbl.text = name_short
+        name_grp.x = max(0, (PANEL_WIDTH - len(name_short) * 6) // 2)
+
+    # Phase 2: hold with live countdown
+    end = time.monotonic() + 30
     while time.monotonic() < end:
         action = _poll()
         if action:
@@ -1293,21 +1339,8 @@ def render_countdown(msg):
         cur = int(time.monotonic())
         if cur != prev:
             prev = cur
-            secs = _remaining()
-            nl2, nl3, ncol = _fmt(secs)
-            ns2 = 2 if (not nl3 and len(nl2) * 12 <= PANEL_WIDTH) else 1
-            if ns2 != s2:
-                # scale transition — rebuild (rare, only near 1-hour mark)
+            if _update_countdown() == "rebuild":
                 return render_countdown(msg)
-            if nl2 != lbl2.text or ncol != lbl2.color:
-                lbl2.text  = nl2
-                lbl2.color = ncol
-                grp2.x = max(0, (PANEL_WIDTH - len(nl2) * 6 * s2) // 2)
-            nl3_disp = nl3 if nl3 else " "
-            if nl3_disp != lbl3.text or ncol != lbl3.color:
-                lbl3.text  = nl3_disp
-                lbl3.color = ncol
-                lbl3.x = max(0, (PANEL_WIDTH - len(nl3) * 6) // 2) if nl3 else 0
         time.sleep(0.05)
     return "done"
 
