@@ -322,15 +322,15 @@ class _CallbackHandler(BaseHTTPRequestHandler):
             payload    = json.loads(body)
             event      = payload.get("event", "unknown")
             board_time = payload.get("board_time", "?")
-            recv_time  = datetime.now().strftime("%H:%M:%S")
+            recv_time  = datetime.now().strftime("%H:%M:%S.%f")
             lag        = ""
             try:
                 from datetime import datetime as _dt
-                bt = _dt.strptime(board_time, "%H:%M:%S")
-                rt = _dt.strptime(recv_time,  "%H:%M:%S")
-                diff = int((rt - bt).total_seconds())
-                if diff >= 0:
-                    lag = f"  lag={diff}s"
+                bt = _dt.strptime(board_time, "%H:%M:%S.%f")
+                rt = _dt.strptime(recv_time,  "%H:%M:%S.%f")
+                diff_ms = int((rt - bt).total_seconds() * 1000)
+                if diff_ms >= 0:
+                    lag = f"  lag={diff_ms}ms"
             except Exception:
                 pass
             if event == "person_detected":

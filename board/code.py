@@ -142,8 +142,10 @@ def notify_callback(event, board_time=None):
         return
     try:
         if board_time is None:
+            mono = time.monotonic()
             t = time.localtime()
-            board_time = f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}"
+            ms = int((mono % 1) * 1000)
+            board_time = f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}.{ms:03d}"
         _requests.post(callback_url, json={"event": event, "board_time": board_time})
     except Exception as e:
         log(f"Callback failed: {e}")
