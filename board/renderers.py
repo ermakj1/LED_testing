@@ -1257,19 +1257,15 @@ def render_countdown(msg):
     tg2, pal2 = _make_colon(X0 + 27, col)
     tg3, pal3 = _make_colon(X0 + 42, col)
 
-    # Name group (scrollable)
+    # Name label — scroll by moving label.x (NOT a Group, Groups crash on negative x)
     name_lbl = label.Label(terminalio.FONT, text=name, color=0xCCCCCC)
-    name_lbl.x = 0
-    name_lbl.y = 0
-    name_grp = displayio.Group()
-    name_grp.y = 6
-    name_grp.append(name_lbl)
-    name_w = len(name) * 6
-    name_grp.x = max(0, (PANEL_WIDTH - name_w) // 2) if name_w <= PANEL_WIDTH else PANEL_WIDTH
+    name_w   = len(name) * 6
+    name_lbl.x = max(0, (PANEL_WIDTH - name_w) // 2) if name_w <= PANEL_WIDTH else PANEL_WIDTH
+    name_lbl.y = 6
 
     group = displayio.Group()
     group.append(_bg(bg))
-    group.append(name_grp)
+    group.append(name_lbl)
     group.append(lbl_d)
     group.append(tg1)
     group.append(lbl_h)
@@ -1311,7 +1307,7 @@ def render_countdown(msg):
             time.sleep(0.05)
     else:
         # Name too long — scroll continuously for the full hold period
-        name_grp.x = PANEL_WIDTH
+        name_lbl.x = PANEL_WIDTH
         while time.monotonic() < end:
             action = _poll()
             if action:
@@ -1320,9 +1316,9 @@ def render_countdown(msg):
             if cur != prev:
                 prev = cur
                 _update()
-            name_grp.x -= 1
-            if name_grp.x < -name_w:
-                name_grp.x = PANEL_WIDTH   # wrap back to start
+            name_lbl.x -= 1
+            if name_lbl.x < -name_w:
+                name_lbl.x = PANEL_WIDTH   # wrap back to start
             time.sleep(SCROLL_DELAY)
     return "done"
 
