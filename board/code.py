@@ -1,3 +1,5 @@
+VERSION = "1.4"
+
 # MatrixPortal S3 - scrolling message queue with HTTP API
 #
 # POST /add      category-specific JSON payload (see send_message.py)
@@ -516,7 +518,7 @@ def greeting_text():
 # --- Main loop ---
 
 clear_display()
-log("Ready")
+log(f"Ready  v{VERSION}")
 
 while True:
     server.poll()

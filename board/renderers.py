@@ -1224,7 +1224,7 @@ def render_countdown(msg):
             yr = int(target_date[0:4])
             mo = int(target_date[5:7])
             dy = int(target_date[8:10])
-            target_secs = time.mktime(time.struct_time((yr, mo, dy, 0, 0, 0, 0, -1, -1)))
+            target_secs = time.mktime(time.struct_time((yr, mo, dy, 0, 0, 0, 0, 0, 0)))
         except Exception:
             pass
 
@@ -1311,11 +1311,23 @@ def render_countdown(msg):
                 pal[1] = new_col
 
     prev = -1
+    end  = time.monotonic() + 30
 
-    # Phase 1: scroll name if it doesn't fit
-    if name_w > PANEL_WIDTH:
-        scroll_end = -name_w
-        while name_grp.x > scroll_end:
+    if name_w <= PANEL_WIDTH:
+        # Name fits — hold static with live countdown
+        while time.monotonic() < end:
+            action = _poll()
+            if action:
+                return action
+            cur = int(time.monotonic())
+            if cur != prev:
+                prev = cur
+                _update()
+            time.sleep(0.05)
+    else:
+        # Name too long — scroll continuously for the full hold period
+        name_grp.x = PANEL_WIDTH
+        while time.monotonic() < end:
             action = _poll()
             if action:
                 return action
@@ -1324,22 +1336,9 @@ def render_countdown(msg):
                 prev = cur
                 _update()
             name_grp.x -= 1
+            if name_grp.x < -name_w:
+                name_grp.x = PANEL_WIDTH   # wrap back to start
             time.sleep(SCROLL_DELAY)
-        name_short = name[:10]
-        name_lbl.text = name_short
-        name_grp.x = max(0, (PANEL_WIDTH - len(name_short) * 6) // 2)
-
-    # Phase 2: hold with live countdown
-    end = time.monotonic() + 30
-    while time.monotonic() < end:
-        action = _poll()
-        if action:
-            return action
-        cur = int(time.monotonic())
-        if cur != prev:
-            prev = cur
-            _update()
-        time.sleep(0.05)
     return "done"
 
 
