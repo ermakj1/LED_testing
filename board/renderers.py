@@ -419,9 +419,6 @@ def render_generic(msg):
 
 
 def render_news(msg):
-    result = _category_header("NEWS", 0xDD88FF, 0x0C0018)
-    if result and result != "done":
-        return result
     return _show_text(msg.get("text", ""), 0xDD88FF, 0x0C0018)
 
 
@@ -480,10 +477,6 @@ def render_joke(msg):
     setup    = msg.get("setup", msg.get("text", ""))
     delivery = msg.get("delivery", "")
     joke_bg  = 0x080A00
-
-    result = _category_header("JOKE", 0xFFCC44, joke_bg)
-    if result and result != "done":
-        return result
 
     if setup:
         result = _show_text(setup, 0xFFCC44, joke_bg, hold_secs=3)
@@ -1160,10 +1153,6 @@ def render_word(msg):
     defn  = msg.get("definition", "")
     bg    = 0x000A10
 
-    result = _category_header("WORD", 0x00CCFF, bg)
-    if result and result != "done":
-        return result
-
     # Line 1: word (highlighted)
     word_lbl = label.Label(terminalio.FONT, text=word[:10].upper(), color=0x00CCFF)
     word_lbl.x = 2
@@ -1194,10 +1183,6 @@ def render_history(msg):
     year = msg.get("year", "")
     text = msg.get("text", "")
     bg   = 0x0A0800
-
-    result = _category_header("HISTORY", 0xFFAA00, bg)
-    if result and result != "done":
-        return result
 
     year_str = str(year) if year else ""
     header   = f"In {year_str}:" if year_str else "On this day:"
@@ -1347,9 +1332,5 @@ def render_quote(msg):
     text  = msg.get("text", "")
     color = 0xFF6633
     bg    = 0x0A0300
-
-    result = _category_header("QUOTE", color, bg)
-    if result and result != "done":
-        return result
 
     return _show_text(text, color, bg)
