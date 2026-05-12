@@ -364,20 +364,47 @@ def render_clock():
     time_str = f"{hour}:{t.tm_min:02}"
     date_str = f"{_WDAYS[t.tm_wday]} {_MONTHS[t.tm_mon-1]} {t.tm_mday}"
 
-    time_lbl = label.Label(terminalio.FONT, text=time_str, color=color)
-    time_lbl.x = 0
-    time_lbl.y = 0
-    time_grp = displayio.Group(scale=2)
-    time_grp.x = (PANEL_WIDTH - len(time_str) * 6 * 2) // 2
-    time_grp.y = 10
-    time_grp.append(time_lbl)
+    # Split hours/mins into separate scale=2 labels with a custom colon bitmap
+    # so the colon dots are properly centered (font colon sits too low)
+    hour_str = f"{hour}"
+    min_str  = f"{t.tm_min:02}"
+    hour_w   = len(hour_str) * 6 * 2   # 12 or 24px
+    colon_w  = 4
+    total_w  = hour_w + colon_w + 24   # mins always 2 digits = 24px
+    x0       = (PANEL_WIDTH - total_w) // 2
+    GY       = 10   # group y — text center in display space
+
+    hour_lbl = label.Label(terminalio.FONT, text=hour_str, color=color)
+    hour_lbl.x = 0;  hour_lbl.y = 0
+    hour_grp = displayio.Group(scale=2)
+    hour_grp.x = x0;  hour_grp.y = GY
+    hour_grp.append(hour_lbl)
+
+    min_lbl = label.Label(terminalio.FONT, text=min_str, color=color)
+    min_lbl.x = 0;  min_lbl.y = 0
+    min_grp = displayio.Group(scale=2)
+    min_grp.x = x0 + hour_w + colon_w;  min_grp.y = GY
+    min_grp.append(min_lbl)
+
+    # 4×16 colon bitmap with 2×2 dots at 1/3 and 2/3 height, aligned to GY
+    col_bm  = displayio.Bitmap(4, 16, 2)
+    col_pal = displayio.Palette(2)
+    col_pal[0] = 0x000000
+    col_pal[1] = color
+    for cx in (1, 2):
+        col_bm[cx, 4] = 1;  col_bm[cx, 5] = 1    # top dot
+        col_bm[cx, 10] = 1; col_bm[cx, 11] = 1   # bottom dot
+    col_tg = displayio.TileGrid(col_bm, pixel_shader=col_pal,
+                                x=x0 + hour_w, y=GY - 8)
 
     date_lbl = label.Label(terminalio.FONT, text=date_str, color=0x444444)
     date_lbl.x = (PANEL_WIDTH - len(date_str) * 6) // 2
     date_lbl.y = 25
 
     group = displayio.Group()
-    group.append(time_grp)
+    group.append(hour_grp)
+    group.append(col_tg)
+    group.append(min_grp)
     group.append(date_lbl)
 
     # Seconds progress bar along the bottom — dimmed version of clock color
