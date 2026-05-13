@@ -1229,14 +1229,24 @@ def render_countdown(msg):
     target_date = msg.get("target_date", "")
     bg          = 0x080010
 
-    # Use seconds_remaining stamped by the feed + received_mono stamped by /add handler
-    # so we never need time.mktime (which behaves inconsistently in CircuitPython)
-    secs_at_receive  = int(msg.get("seconds_remaining", 0))
-    received_mono    = float(msg.get("received_mono", time.monotonic()))
+    # Compute target time using time.mktime.
+    # tm_yday must be valid (1-366) — CircuitPython rejects 0 unlike CPython.
+    target_secs = 0
+    if len(target_date) == 10:
+        try:
+            yr = int(target_date[0:4])
+            mo = int(target_date[5:7])
+            dy = int(target_date[8:10])
+            _dim = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+            if (yr % 4 == 0 and yr % 100 != 0) or (yr % 400 == 0):
+                _dim[2] = 29
+            yday = sum(_dim[1:mo]) + dy
+            target_secs = time.mktime(time.struct_time((yr, mo, dy, 0, 0, 0, 0, yday, 0)))
+        except Exception:
+            pass
 
     def _remaining():
-        elapsed = time.monotonic() - received_mono
-        return max(0, int(secs_at_receive - elapsed))
+        return max(0, int(target_secs - time.time())) if target_secs else 0
 
     def _color(d):
         if d > 30: return 0x00AAFF
