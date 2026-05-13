@@ -205,7 +205,8 @@ def add_message(request: Request):
             return Response(request, '{"ok":false,"reason":"queue full"}', content_type="application/json", status=(429, "Too Many Requests"))
         msg = dict(data)
         msg["category"] = category
-        msg["expires_at"] = time.monotonic() + ttl * 60
+        msg["expires_at"]   = time.monotonic() + ttl * 60
+        msg["received_mono"] = time.monotonic()
         msg["id"] = _new_id()
         message_queue.append(msg)
         log(f"Queued [{category}]: {_msg_summary(msg)}  (ttl={ttl}m, queue={len(message_queue)})")

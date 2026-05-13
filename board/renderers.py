@@ -1229,19 +1229,14 @@ def render_countdown(msg):
     target_date = msg.get("target_date", "")
     bg          = 0x080010
 
-    # Compute target in board-local seconds using time.mktime
-    target_secs = 0
-    if len(target_date) == 10:
-        try:
-            yr = int(target_date[0:4])
-            mo = int(target_date[5:7])
-            dy = int(target_date[8:10])
-            target_secs = time.mktime(time.struct_time((yr, mo, dy, 0, 0, 0, 0, 0, 0)))
-        except Exception:
-            pass
+    # Use seconds_remaining stamped by the feed + received_mono stamped by /add handler
+    # so we never need time.mktime (which behaves inconsistently in CircuitPython)
+    secs_at_receive  = int(msg.get("seconds_remaining", 0))
+    received_mono    = float(msg.get("received_mono", time.monotonic()))
 
     def _remaining():
-        return max(0, int(target_secs - time.time())) if target_secs else 0
+        elapsed = time.monotonic() - received_mono
+        return max(0, int(secs_at_receive - elapsed))
 
     def _color(d):
         if d > 30: return 0x00AAFF
