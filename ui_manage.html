@@ -175,13 +175,11 @@ header {
 }
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.tabs::-webkit-scrollbar { display: none; }
 .tab {
   flex-shrink: 0;
   padding: 10px 10px;
