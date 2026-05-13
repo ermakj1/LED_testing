@@ -1,4 +1,4 @@
-VERSION = "1.4"
+VERSION = "1.5"
 
 # MatrixPortal S3 - scrolling message queue with HTTP API
 #
@@ -41,6 +41,7 @@ MAX_QUEUE    = 20
 DEFAULT_TTL_MINUTES   = 60
 SLEEP_TIMEOUT_SECONDS      = 300   # 5 minutes of no motion → sleep
 PIR_ENABLED                = True  # set False if PIR sensor is not connected
+GREETINGS_ENABLED          = True  # set False to skip "Good morning/afternoon/evening"
 HEARTBEAT_SECONDS          = 60    # log a heartbeat this often while sleeping
 PRESENCE_HEARTBEAT_MINUTES = 5     # send "motion" callback this often while room is occupied
 LOG_MAX_LINES         = 100
@@ -353,6 +354,24 @@ def pir_disable(request: Request):
     log("PIR disabled")
     return Response(request, '{"ok":true}', content_type="application/json")
 
+@server.route("/greeting", "GET")
+def greeting_status(request: Request):
+    return Response(request, json.dumps({"greetings_enabled": GREETINGS_ENABLED}), content_type="application/json")
+
+@server.route("/greeting/enable", "POST")
+def greeting_enable(request: Request):
+    global GREETINGS_ENABLED
+    GREETINGS_ENABLED = True
+    log("Greetings enabled")
+    return Response(request, '{"ok":true}', content_type="application/json")
+
+@server.route("/greeting/disable", "POST")
+def greeting_disable(request: Request):
+    global GREETINGS_ENABLED
+    GREETINGS_ENABLED = False
+    log("Greetings disabled")
+    return Response(request, '{"ok":true}', content_type="application/json")
+
 @server.route("/usb/disable", "POST")
 def usb_disable(request: Request):
     global _pending_reload
@@ -544,13 +563,14 @@ while True:
             asleep      = False
             sleep_start = None
             notify_callback("person_detected")
-            result = renderers.render_greeting(greeting_text())
-            clear_display()
-            if result == "sleep":
-                asleep = True
-            elif result == "clear":
-                message_queue.clear()
-                time.sleep(0.3)
+            if GREETINGS_ENABLED:
+                result = renderers.render_greeting(greeting_text())
+                clear_display()
+                if result == "sleep":
+                    asleep = True
+                elif result == "clear":
+                    message_queue.clear()
+                    time.sleep(0.3)
         last_motion_ref[0] = time.monotonic()
 
     # Presence heartbeat — fire "motion" callback periodically while room is occupied
@@ -583,10 +603,11 @@ while True:
             sleep_start = None
             last_motion_ref[0] = time.monotonic()
             notify_callback("person_detected")
-            result = renderers.render_greeting(greeting_text())
-            clear_display()
-            if result == "clear":
-                message_queue.clear()
+            if GREETINGS_ENABLED:
+                result = renderers.render_greeting(greeting_text())
+                clear_display()
+                if result == "clear":
+                    message_queue.clear()
             time.sleep(0.3)
         server.poll()
         time.sleep(0.1)
