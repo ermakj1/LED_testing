@@ -1,4 +1,4 @@
-VERSION = "1.5"
+VERSION = "1.6"
 
 # MatrixPortal S3 - scrolling message queue with HTTP API
 #
@@ -452,7 +452,22 @@ def serve_schema(request: Request):
     }
     return Response(request, json.dumps(schema), content_type="application/json")
 
-CRASH_LOG = "/crash.log"
+CRASH_LOG      = "/crash.log"
+RENDER_CRUMB   = "/rendering.txt"  # written before each render, deleted after
+
+def _crumb_write(label):
+    try:
+        with open(RENDER_CRUMB, "w") as f:
+            f.write(label)
+    except Exception:
+        pass
+
+def _crumb_clear():
+    try:
+        import os as _os
+        _os.remove(RENDER_CRUMB)
+    except OSError:
+        pass
 
 def _write_crash(category, exc):
     """Capture traceback to crash.log and to the in-memory log."""
@@ -536,6 +551,15 @@ def greeting_text():
 
 # --- Main loop ---
 
+# If a render breadcrumb exists from a previous boot, a hard crash occurred there
+try:
+    with open(RENDER_CRUMB) as _f:
+        _prior = _f.read().strip()
+    log(f"Hard crash detected — was rendering: {_prior}")
+    _crumb_clear()
+except OSError:
+    pass
+
 clear_display()
 log(f"Ready  v{VERSION}")
 
@@ -564,7 +588,9 @@ while True:
             sleep_start = None
             notify_callback("person_detected")
             if GREETINGS_ENABLED:
+                _crumb_write("greeting")
                 result = renderers.render_greeting(greeting_text())
+                _crumb_clear()
                 clear_display()
                 if result == "sleep":
                     asleep = True
@@ -604,7 +630,9 @@ while True:
             last_motion_ref[0] = time.monotonic()
             notify_callback("person_detected")
             if GREETINGS_ENABLED:
+                _crumb_write("greeting")
                 result = renderers.render_greeting(greeting_text())
+                _crumb_clear()
                 clear_display()
                 if result == "clear":
                     message_queue.clear()
@@ -636,8 +664,13 @@ while True:
         _msgs_since_clock = 0
         log("Clock break")
         break_end = time.monotonic() + CLOCK_BREAK_SECS
+        _crumb_write("clock")
         while time.monotonic() < break_end:
-            action = renderers.render_clock()
+            try:
+                action = renderers.render_clock()
+            except Exception as e:
+                _write_crash("clock", e)
+                action = "done"
             if action == "sleep":
                 asleep      = True
                 sleep_start = time.monotonic()
@@ -645,6 +678,7 @@ while True:
             elif action == "clear":
                 message_queue.clear()
                 break
+        _crumb_clear()
 
     if message_queue:
         msg = message_queue.pop(0)
@@ -653,11 +687,13 @@ while True:
             continue
         current_msg = msg
         log(f"Displaying [{msg.get('category','')}]: {_msg_summary(msg)}")
+        _crumb_write(msg.get("category", "?"))
         try:
             result = renderers.render(msg)
         except Exception as e:
             _write_crash(msg.get("category", "?"), e)
             result = "done"
+        _crumb_clear()
         current_msg = None
         _msgs_since_clock += 1
         clear_display()
