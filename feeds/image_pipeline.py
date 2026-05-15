@@ -55,10 +55,15 @@ def resize_for_board(image, width=BOARD_WIDTH, height=BOARD_HEIGHT):
 
 
 def save_bmp(image, name):
-    """Save PIL Image as uncompressed BMP to local cache. Returns path."""
+    """Save PIL Image as 8-bit indexed BMP to local cache. Returns path.
+
+    CircuitPython's adafruit_imageload only handles palettized (indexed) BMPs.
+    Saving as 24-bit true-color causes a hard C-level crash on the board.
+    """
     CACHE_DIR.mkdir(exist_ok=True)
     path = CACHE_DIR / f"{name}.bmp"
-    image.save(str(path), "BMP")
+    # Quantize to 256 colours → 8-bit indexed BMP that adafruit_imageload handles
+    image.quantize(colors=256).save(str(path), "BMP")
     return path
 
 
