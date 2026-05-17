@@ -77,17 +77,32 @@ def get_ttl():
 def is_enabled():
     return load_config().get("jeopardy", {}).get("enabled", True)
 
+def is_celebrity_only():
+    return load_config().get("jeopardy", {}).get("celebrity_only", False)
+
 
 # ── Cache management ──────────────────────────────────────────────────────────
 
-def _clue_ok(row, min_val, max_val):
+CELEB_CACHE_PATH = Path(__file__).parent / ".jeopardy_celebrity_cache.json"
+
+def _clue_ok(row, min_val=None, max_val=None, celebrity_only=False):
     """Return True if this TSV row is a usable clue."""
-    try:
-        val = int(row.get("clue_value", 0) or 0)
-    except (ValueError, TypeError):
-        return False
-    if val < min_val or val > max_val:
-        return False
+    # Celebrity filter: notes field must mention "Celebrity Jeopardy"
+    if celebrity_only:
+        notes = (row.get("notes") or "").lower()
+        if "celebrity" not in notes:
+            return False
+
+    if min_val is not None or max_val is not None:
+        try:
+            val = int(row.get("clue_value", 0) or 0)
+        except (ValueError, TypeError):
+            return False
+        if min_val is not None and val < min_val:
+            return False
+        if max_val is not None and val > max_val:
+            return False
+
     clue   = (row.get("answer") or "").strip()    # "answer" column = clue text
     answer = (row.get("question") or "").strip()  # "question" column = response
     if len(clue) < MIN_CLUE_LEN or len(clue) > MAX_CLUE_LEN:
@@ -100,40 +115,55 @@ def _clue_ok(row, min_val, max_val):
     return True
 
 
-def build_cache(min_val=200, max_val=1000):
-    """Download the full TSV dataset, sample CACHE_SIZE usable clues, save JSON."""
-    log(f"Downloading Jeopardy dataset from GitHub (~60 MB, one-time)...")
+def _row_to_clue(row):
+    return {
+        "clue":     row["answer"].strip(),
+        "answer":   row["question"].strip(),
+        "category": row["category"].strip().upper(),
+        "value":    int(row["clue_value"] or 0),
+    }
+
+
+def _download_raw():
+    log("Downloading Jeopardy dataset from GitHub (~60 MB, one-time)...")
     req = urllib.request.Request(DATASET_URL, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         raw = resp.read().decode("utf-8", errors="replace")
-    log(f"Download complete ({len(raw) // 1024 // 1024} MB). Filtering clues...")
+    log(f"Download complete ({len(raw) // 1024 // 1024} MB).")
+    return raw
 
-    reader   = csv.DictReader(io.StringIO(raw), delimiter="\t")
-    eligible = [row for row in reader if _clue_ok(row, min_val, max_val)]
-    log(f"Found {len(eligible)} eligible clues. Sampling {CACHE_SIZE}...")
 
-    sample = random.sample(eligible, min(CACHE_SIZE, len(eligible)))
-    cache  = [
-        {
-            "clue":     row["answer"].strip(),
-            "answer":   row["question"].strip(),
-            "category": row["category"].strip().upper(),
-            "value":    int(row["clue_value"] or 0),
-        }
-        for row in sample
-    ]
+def build_cache(min_val=200, max_val=1000):
+    """Download the full TSV and build BOTH caches (regular + celebrity) at once."""
+    raw    = _download_raw()
+    reader = list(csv.DictReader(io.StringIO(raw), delimiter="\t"))
+    log(f"Filtering clues from {len(reader)} rows...")
+
+    # ── Regular cache ──────────────────────────────────────────────────────────
+    eligible = [r for r in reader if _clue_ok(r, min_val, max_val, celebrity_only=False)]
+    sample   = random.sample(eligible, min(CACHE_SIZE, len(eligible)))
+    cache    = [_row_to_clue(r) for r in sample]
     with open(CACHE_PATH, "w") as f:
         json.dump(cache, f)
-    log(f"Cache built: {len(cache)} clues saved to {CACHE_PATH.name}")
+    log(f"Regular cache: {len(cache)} clues (from {len(eligible)} eligible)")
+
+    # ── Celebrity cache — keep ALL celebrity clues (only ~4800 total) ──────────
+    celeb = [r for r in reader if _clue_ok(r, celebrity_only=True)]
+    celeb_cache = [_row_to_clue(r) for r in celeb]
+    with open(CELEB_CACHE_PATH, "w") as f:
+        json.dump(celeb_cache, f)
+    log(f"Celebrity cache: {len(celeb_cache)} clues saved")
+
     return cache
 
 
-def load_cache():
-    """Load cached clues from disk, or return None if missing/corrupt."""
-    if not CACHE_PATH.exists():
+def load_cache(celebrity_only=False):
+    """Load the appropriate cached clues from disk, or None if missing/corrupt."""
+    path = CELEB_CACHE_PATH if celebrity_only else CACHE_PATH
+    if not path.exists():
         return None
     try:
-        with open(CACHE_PATH) as f:
+        with open(path) as f:
             data = json.load(f)
         if isinstance(data, list) and len(data) > 0:
             return data
@@ -142,11 +172,13 @@ def load_cache():
     return None
 
 
-def get_clues(count, force_refresh=False):
+def get_clues(count, force_refresh=False, celebrity_only=False):
     """Return `count` random clues, building/refreshing cache as needed."""
-    cache = None if force_refresh else load_cache()
+    cache = None if force_refresh else load_cache(celebrity_only=celebrity_only)
     if cache is None:
-        cache = build_cache(get_min_value(), get_max_value())
+        # Build both caches in one download pass
+        build_cache(get_min_value(), get_max_value())
+        cache = load_cache(celebrity_only=celebrity_only) or []
     return random.sample(cache, min(count, len(cache)))
 
 
@@ -172,11 +204,12 @@ def post_clue(board_url, clue, answer, category, value, ttl_minutes):
 
 
 def send_clues(force_refresh=False):
-    board_url = get_board_url()
-    count     = get_count()
-    ttl       = get_ttl()
+    board_url   = get_board_url()
+    count       = get_count()
+    ttl         = get_ttl()
+    celeb_only  = is_celebrity_only()
 
-    clues = get_clues(count, force_refresh=force_refresh)
+    clues = get_clues(count, force_refresh=force_refresh, celebrity_only=celeb_only)
     for q in clues:
         try:
             result = post_clue(

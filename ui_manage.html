@@ -1089,6 +1089,10 @@ function renderJeopardy() {
       <span class="toggle-label">Enabled</span>
       <label class="switch"><input type="checkbox" id="j2-enabled" ${j.enabled !== false ? 'checked' : ''}><span class="slider"></span></label>
     </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Celebrity Jeopardy only <span style="color:var(--muted);font-size:11px">(~4,800 easier clues)</span></span>
+      <label class="switch"><input type="checkbox" id="j2-celeb" ${j.celebrity_only ? 'checked' : ''}><span class="slider"></span></label>
+    </div>
     <div class="interval-row">
       <label>Post every</label>
       <input type="number" id="j2-interval" value="${j.interval_minutes || 30}" min="5" max="360">
@@ -1098,8 +1102,8 @@ function renderJeopardy() {
       <label>Clues per batch</label>
       <input type="number" id="j2-count" value="${j.count || 3}" min="1" max="10">
     </div>
-    <div class="field">
-      <label>Dollar value range</label>
+    <div class="field" id="j2-value-range" style="${j.celebrity_only ? 'opacity:0.4;pointer-events:none' : ''}">
+      <label>Dollar value range <span style="color:var(--muted);font-size:11px">(ignored in celebrity mode)</span></label>
       <div style="display:flex;gap:8px;align-items:center">
         <span style="color:var(--muted);font-size:12px">$</span>
         <input type="number" id="j2-min" value="${j.min_value || 200}" min="0" max="2000" style="width:80px">
@@ -1110,10 +1114,15 @@ function renderJeopardy() {
     </div>
     <button class="btn btn-success btn-full" onclick="saveJeopardy()">Save Jeopardy Settings</button>
   `;
+  document.getElementById('j2-celeb').addEventListener('change', e => {
+    document.getElementById('j2-value-range').style.opacity = e.target.checked ? '0.4' : '1';
+    document.getElementById('j2-value-range').style.pointerEvents = e.target.checked ? 'none' : '';
+  });
 }
 async function saveJeopardy() {
   await saveSection('jeopardy', {
     enabled:          document.getElementById('j2-enabled').checked,
+    celebrity_only:   document.getElementById('j2-celeb').checked,
     interval_minutes: +document.getElementById('j2-interval').value,
     count:            +document.getElementById('j2-count').value,
     min_value:        +document.getElementById('j2-min').value,
