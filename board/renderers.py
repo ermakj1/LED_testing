@@ -1144,23 +1144,69 @@ def render_animation(msg):
 # New renderers: bitmap, word, history, countdown
 # ---------------------------------------------------------------------------
 
+def _load_bmp(path):
+    """Pure-Python 8-bit indexed BMP loader — avoids adafruit_imageload C crashes.
+
+    Supports exactly the format image_pipeline.py produces:
+    8-bit indexed, uncompressed, BITMAPINFOHEADER, any size.
+    Returns (displayio.Bitmap, displayio.Palette).
+    """
+    import gc, struct
+    gc.collect()
+    with open(path, "rb") as f:
+        data = f.read()
+
+    if data[0:2] != b"BM":
+        raise ValueError("Not a BMP")
+
+    pixel_offset   = struct.unpack_from("<I", data, 10)[0]
+    width          = struct.unpack_from("<i", data, 18)[0]
+    height_raw     = struct.unpack_from("<i", data, 22)[0]
+    bpp            = struct.unpack_from("<H", data, 28)[0]
+    dib_size       = struct.unpack_from("<I", data, 14)[0]
+
+    if bpp != 8:
+        raise ValueError(f"Expected 8-bit BMP, got {bpp}-bit")
+
+    bottom_up = height_raw > 0   # positive = rows stored bottom-to-top (standard)
+    height    = abs(height_raw)
+
+    # Color table: between end of DIB header and pixel data
+    ct_start  = 14 + dib_size
+    n_colors  = (pixel_offset - ct_start) // 4
+    n_colors  = max(1, min(n_colors, 256))
+
+    pal = displayio.Palette(n_colors)
+    for i in range(n_colors):
+        o = ct_start + i * 4
+        pal[i] = (data[o + 2] << 16) | (data[o + 1] << 8) | data[o]  # BGRA→RGB
+
+    # Rows are padded to 4-byte boundaries
+    stride = (width + 3) & ~3
+    bm     = displayio.Bitmap(width, height, n_colors)
+    for y in range(height):
+        src_y      = (height - 1 - y) if bottom_up else y
+        row_start  = pixel_offset + src_y * stride
+        for x in range(width):
+            bm[x, y] = data[row_start + x]
+
+    gc.collect()
+    return bm, pal
+
+
 def render_bitmap(msg):
     """Display a pre-converted BMP file from the board filesystem."""
-    import adafruit_imageload
     path    = msg.get("path", "")
     caption = msg.get("caption", "")
     if not path:
         return "done"
     try:
-        image, palette = adafruit_imageload.load(
-            path, bitmap=displayio.Bitmap, palette=displayio.Palette
-        )
+        image, palette = _load_bmp(path)
         tile  = displayio.TileGrid(image, pixel_shader=palette)
         group = displayio.Group()
         group.append(tile)
 
         if caption:
-            # Semi-transparent caption bar at the bottom
             cap_lbl = label.Label(terminalio.FONT, text=caption[:10], color=0xFFFFFF)
             cap_lbl.x = 1
             cap_lbl.y = PANEL_HEIGHT - 5
