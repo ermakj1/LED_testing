@@ -83,6 +83,14 @@ DEFAULT_CONFIG = {
         "interval_minutes": 60,
         "enabled": True,
     },
+    "jeopardy": {
+        "interval_minutes": 30,
+        "enabled": True,
+        "count": 3,
+        "min_value": 200,
+        "max_value": 1000,
+        "ttl_minutes": 35,
+    },
 }
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -235,6 +243,7 @@ def _build_processes():
         ManagedProcess("history",    [sys.executable, "feeds/history.py"]),
         ManagedProcess("countdown",  [sys.executable, "feeds/countdown.py"]),
         ManagedProcess("quotes",     [sys.executable, "feeds/quotes.py"], display_name="Michael Scott"),
+        ManagedProcess("jeopardy",   [sys.executable, "feeds/jeopardy.py"]),
     ]
 
 def _panel_crash_poller():
@@ -404,6 +413,7 @@ _FEED_CATEGORIES = {
     "history":   ["history"],
     "countdown": ["countdown"],
     "quotes":    ["quote"],
+    "jeopardy":  ["jeopardy"],
 }
 
 def _clear_feed_from_board(cfg, feed_name):
@@ -523,7 +533,7 @@ def api_config_update(section):
         restart_all()
         _log("Board settings updated")
     elif section in ("weather", "stock", "jokes", "animations",
-                     "nasa", "wordofday", "history", "countdown", "quotes"):
+                     "nasa", "wordofday", "history", "countdown", "quotes", "jeopardy"):
         was_enabled = cfg.get(section, {}).get("enabled", True)
         now_enabled = data.get("enabled", True)
         cfg[section] = data

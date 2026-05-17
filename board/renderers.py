@@ -350,6 +350,7 @@ def render(msg):
     if category == "history":   return render_history(msg)
     if category == "countdown": return render_countdown(msg)
     if category == "quote":     return render_quote(msg)
+    if category == "jeopardy":  return render_jeopardy(msg)
     return render_generic(msg)
 
 
@@ -1408,3 +1409,76 @@ def render_quote(msg):
     bg    = 0x0A0300
 
     return _show_text(text, color, bg)
+
+
+def render_jeopardy(msg):
+    """Show a Jeopardy clue: category + value → clue → answer reveal."""
+    clue     = msg.get("clue", "")
+    answer   = msg.get("answer", "")
+    category = msg.get("jeopardy_category", "JEOPARDY")
+    value    = msg.get("value", 0)
+
+    # Jeopardy blue palette
+    bg          = 0x000033
+    cat_color   = 0xFFCC00   # gold
+    val_color   = 0x888866   # dimmed gold
+    clue_color  = 0xFFFFFF   # white
+    ans_color   = 0x44FF88   # green
+
+    # ── Phase 1: category name + dollar value ─────────────────────────────────
+    cat_text = category[:10]  # truncate long category names for header
+    cat_w    = len(cat_text) * 6
+    val_text = f"${value}" if value else "JEOPARDY"
+    val_w    = len(val_text) * 6
+
+    cat_lbl = label.Label(terminalio.FONT, text=cat_text, color=cat_color)
+    cat_lbl.x = max(0, (PANEL_WIDTH - cat_w) // 2)
+    cat_lbl.y = 9
+
+    val_lbl = label.Label(terminalio.FONT, text=val_text, color=val_color)
+    val_lbl.x = max(0, (PANEL_WIDTH - val_w) // 2)
+    val_lbl.y = 22
+
+    grp = displayio.Group()
+    grp.append(_bg(bg))
+    grp.append(cat_lbl)
+    grp.append(val_lbl)
+    _display.root_group = grp
+
+    # Scroll category if it doesn't fit, otherwise hold
+    if cat_w > PANEL_WIDTH:
+        cat_lbl.x = PANEL_WIDTH
+        end = time.monotonic() + 2.5
+        while time.monotonic() < end:
+            action = _poll()
+            if action:
+                return action
+            cat_lbl.x -= 1
+            if cat_lbl.x < -cat_w:
+                cat_lbl.x = PANEL_WIDTH
+            time.sleep(SCROLL_DELAY)
+    else:
+        result = _hold(2.5)
+        if result and result != "done":
+            return result
+
+    # ── Phase 2: the clue ─────────────────────────────────────────────────────
+    result = _show_text(clue, clue_color, bg, hold_secs=3)
+    if result and result != "done":
+        return result
+
+    # ── Phase 3: animated "..." pause ────────────────────────────────────────
+    for dots in (".", "..", "..."):
+        dot_lbl = label.Label(terminalio.FONT, text=dots, color=cat_color)
+        dot_lbl.x = (PANEL_WIDTH - len(dots) * 6) // 2
+        dot_lbl.y = PANEL_HEIGHT // 2 - 3
+        g = displayio.Group()
+        g.append(_bg(bg))
+        g.append(dot_lbl)
+        _display.root_group = g
+        result = _hold(0.5)
+        if result and result != "done":
+            return result
+
+    # ── Phase 4: answer reveal ────────────────────────────────────────────────
+    return _show_text(f"A: {answer}", ans_color, bg, hold_secs=4)
