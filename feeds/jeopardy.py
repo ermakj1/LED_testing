@@ -203,6 +203,12 @@ def post_clue(board_url, clue, answer, category, value, ttl_minutes):
         return json.loads(resp.read())
 
 
+def _is_queue_full(e):
+    """Return True if the board rejected with 429 (queue full)."""
+    code = getattr(e, "code", None)
+    return code == 429
+
+
 def send_clues(force_refresh=False):
     board_url   = get_board_url()
     count       = get_count()
@@ -211,18 +217,28 @@ def send_clues(force_refresh=False):
 
     clues = get_clues(count, force_refresh=force_refresh, celebrity_only=celeb_only)
     for q in clues:
-        try:
-            result = post_clue(
-                board_url, q["clue"], q["answer"],
-                q["category"], q["value"], ttl,
-            )
-            log(f"Jeopardy [{q['category']} ${q['value']}]: {q['clue'][:40]}... → {result}")
-        except Exception as e:
-            friendly = is_network_error(e)
-            if friendly:
-                log(f"Error: {friendly}")
-            else:
-                log(f"Error posting clue: {e}")
+        # Retry up to 3 times with 2-minute waits if the queue is full
+        for attempt in range(3):
+            try:
+                result = post_clue(
+                    board_url, q["clue"], q["answer"],
+                    q["category"], q["value"], ttl,
+                )
+                log(f"Jeopardy [{q['category']} ${q['value']}]: {q['clue'][:40]}... → {result}")
+                break
+            except Exception as e:
+                if _is_queue_full(e):
+                    if attempt < 2:
+                        log(f"Queue full — waiting 2 min before retry {attempt + 1}/2...")
+                        time.sleep(120)
+                    else:
+                        log("Queue still full after retries — skipping clue")
+                elif is_network_error(e):
+                    log(f"Error: {is_network_error(e)}")
+                    break
+                else:
+                    log(f"Error posting clue: {e}")
+                    break
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
