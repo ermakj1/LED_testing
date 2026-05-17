@@ -298,7 +298,12 @@ def restart_all():
 
 # ── Home Assistant forwarding ─────────────────────────────────────────────────
 
+_ha_last_error_msg  = None   # last error string logged
+_ha_error_count     = 0      # consecutive failures since last success
+_HA_LOG_EVERY       = 10     # only re-log the same error every N failures
+
 def _forward_to_ha(event):
+    global _ha_last_error_msg, _ha_error_count
     cfg = _cfg_ref
     if not cfg:
         return
@@ -312,9 +317,16 @@ def _forward_to_ha(event):
             method="POST",
         )
         urllib.request.urlopen(req, timeout=3)
+        _ha_last_error_msg = None
+        _ha_error_count    = 0
         _log(f"HA notified ({event})")
     except Exception as e:
-        _log(f"HA notify failed: {e}")
+        err = str(e)
+        _ha_error_count += 1
+        # Log on first occurrence, then every _HA_LOG_EVERY failures
+        if err != _ha_last_error_msg or _ha_error_count % _HA_LOG_EVERY == 0:
+            _log(f"HA notify failed: {e}")
+            _ha_last_error_msg = err
 
 # ── Callback server (board → manage.py) ──────────────────────────────────────
 
