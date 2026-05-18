@@ -37,7 +37,7 @@ import renderers
 
 PANEL_WIDTH  = 64
 PANEL_HEIGHT = 32
-MAX_QUEUE    = 20
+MAX_QUEUE    = 30
 DEFAULT_TTL_MINUTES   = 60
 SLEEP_TIMEOUT_SECONDS      = 300   # 5 minutes of no motion → sleep
 PIR_ENABLED                = True  # set False if PIR sensor is not connected

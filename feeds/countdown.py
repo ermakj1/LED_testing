@@ -103,16 +103,25 @@ def send_all():
         total_seconds = max(0, (target_dt - now).total_seconds())
         hours = int(total_seconds // 3600) if delta.days <= 1 else 0
 
-        try:
-            result = post_to_board(board_url, name, date_str, delta.days, hours, ttl)
-            log(f"Countdown '{name}': {delta.days}d {hours}h -> {result}")
-        except Exception as e:
-            friendly = is_network_error(e)
-            if friendly:
-                log(f"Error: {friendly}")
-            else:
-                log(f"Error sending '{name}': {e}")
-                log(traceback.format_exc().strip())
+        for attempt in range(3):
+            try:
+                result = post_to_board(board_url, name, date_str, delta.days, hours, ttl)
+                log(f"Countdown '{name}': {delta.days}d {hours}h -> {result}")
+                break
+            except Exception as e:
+                if getattr(e, "code", None) == 429:
+                    if attempt < 2:
+                        log(f"Queue full — waiting 60s before retry {attempt + 1}/2 for '{name}'...")
+                        time.sleep(60)
+                    else:
+                        log(f"Queue still full after retries — skipping '{name}'")
+                elif is_network_error(e):
+                    log(f"Error: {is_network_error(e)}")
+                    break
+                else:
+                    log(f"Error sending '{name}': {e}")
+                    log(traceback.format_exc().strip())
+                    break
 
 
 def main():

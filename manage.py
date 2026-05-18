@@ -171,12 +171,12 @@ def _log(msg):
 # ── Process management ────────────────────────────────────────────────────────
 
 class ManagedProcess:
-    def __init__(self, name, cmd, display_name=None):
-        self.name         = name
-        self.display_name = display_name or name
-        self.cmd          = cmd
-        self.proc       = None
-        self.restart_at = 0
+    def __init__(self, name, cmd, display_name=None, startup_delay=0):
+        self.name          = name
+        self.display_name  = display_name or name
+        self.cmd           = cmd
+        self.proc          = None
+        self.restart_at    = time.time() + startup_delay
 
     def start(self):
         env = os.environ.copy()
@@ -233,17 +233,19 @@ class ManagedProcess:
 _processes: list[ManagedProcess] = []
 
 def _build_processes():
+    # startup_delay staggers first-run posts so they don't all flood the board
+    # queue simultaneously. Each feed waits N seconds before its first send.
     return [
-        ManagedProcess("weather",    [sys.executable, "feeds/weather.py"]),
-        ManagedProcess("stock",      [sys.executable, "feeds/stock.py"]),
-        ManagedProcess("jokes",      [sys.executable, "feeds/jokes.py"]),
-        ManagedProcess("animations", [sys.executable, "feeds/animations.py"]),
-        ManagedProcess("nasa",       [sys.executable, "feeds/nasa.py"]),
-        ManagedProcess("wordofday",  [sys.executable, "feeds/wordofday.py"]),
-        ManagedProcess("history",    [sys.executable, "feeds/history.py"]),
-        ManagedProcess("countdown",  [sys.executable, "feeds/countdown.py"]),
-        ManagedProcess("quotes",     [sys.executable, "feeds/quotes.py"], display_name="Michael Scott"),
-        ManagedProcess("jeopardy",   [sys.executable, "feeds/jeopardy.py"]),
+        ManagedProcess("weather",    [sys.executable, "feeds/weather.py"],   startup_delay=0),
+        ManagedProcess("stock",      [sys.executable, "feeds/stock.py"],     startup_delay=5),
+        ManagedProcess("jokes",      [sys.executable, "feeds/jokes.py"],     startup_delay=10),
+        ManagedProcess("animations", [sys.executable, "feeds/animations.py"],startup_delay=15),
+        ManagedProcess("nasa",       [sys.executable, "feeds/nasa.py"],      startup_delay=20),
+        ManagedProcess("wordofday",  [sys.executable, "feeds/wordofday.py"], startup_delay=25),
+        ManagedProcess("history",    [sys.executable, "feeds/history.py"],   startup_delay=30),
+        ManagedProcess("countdown",  [sys.executable, "feeds/countdown.py"], startup_delay=35),
+        ManagedProcess("quotes",     [sys.executable, "feeds/quotes.py"],    startup_delay=40, display_name="Michael Scott"),
+        ManagedProcess("jeopardy",   [sys.executable, "feeds/jeopardy.py"],  startup_delay=45),
     ]
 
 def _panel_crash_poller():
