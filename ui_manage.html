@@ -486,6 +486,7 @@ input:checked + .slider::before { transform: translateX(18px); }
       <button class="tab"        onclick="showTab('history')">History</button>
       <button class="tab"        onclick="showTab('countdown')">Countdown</button>
       <button class="tab"        onclick="showTab('quotes')">Quotes</button>
+      <button class="tab"        onclick="showTab('hermes')">Hermes</button>
       <button class="tab"        onclick="showTab('jeopardy')">Jeopardy</button>
       <button class="tab"        onclick="showTab('board')">Board</button>
     </div>
@@ -499,6 +500,7 @@ input:checked + .slider::before { transform: translateX(18px); }
     <div class="tab-content"        id="tab-history"></div>
     <div class="tab-content"        id="tab-countdown"></div>
     <div class="tab-content"        id="tab-quotes"></div>
+    <div class="tab-content"        id="tab-hermes"></div>
     <div class="tab-content"        id="tab-jeopardy"></div>
     <div class="tab-content"        id="tab-board"></div>
   </div>
@@ -629,7 +631,7 @@ async function togglePause() {
 // ── Tab switching ──────────────────────────────────────────────────────────
 function showTab(name) {
   currentTab = name;
-  const tabs = ['queue','weather','stock','jokes','animations','nasa','wordofday','history','countdown','quotes','jeopardy','board'];
+  const tabs = ['queue','weather','stock','jokes','animations','nasa','wordofday','history','countdown','quotes','hermes','jeopardy','board'];
   document.querySelectorAll('.tab').forEach((t, i) => {
     t.classList.toggle('active', tabs[i] === name);
   });
@@ -658,7 +660,7 @@ function renderTab(name) {
     animations: renderAnimations, board: renderBoard,
     nasa: renderNasa, wordofday: renderWordOfDay,
     history: renderHistory, countdown: renderCountdown,
-    quotes: renderQuotes, jeopardy: renderJeopardy,
+    quotes: renderQuotes, hermes: renderHermes, jeopardy: renderJeopardy,
   };
   if (fns[name]) fns[name]();
 }
@@ -1134,14 +1136,14 @@ async function saveJeopardy() {
 async function saveSection(section, data) {
   try {
     const r = await fetch(`/api/config/${section}`, {
-      method: 'POST',
+      method:  'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(data),
+      body:    JSON.stringify(data),
     });
     const d = await r.json();
     if (d.ok) {
-      toast('Saved!', 'ok');
-      await loadConfig();
+      cfg = await (await fetch('/api/config')).json();
+      toast(`${section} settings saved`, 'ok');
     } else {
       toast('Save failed: ' + (d.reason || '?'), 'err');
     }
@@ -1150,7 +1152,95 @@ async function saveSection(section, data) {
   }
 }
 
-async function apiAction(action) {
+function renderHermes() {
+  const h = cfg.hermes || {};
+  document.getElementById('tab-hermes').innerHTML = `
+    <div class="toggle-row">
+      <span class="toggle-label">Hermes Feed Enabled</span>
+      <label class="switch"><input type="checkbox" id="h-enabled" ${h.enabled !== false ? 'checked' : ''} onchange="saveHermes()"><span class="slider"></span></label>
+    </div>
+    <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+      Toggle this to enable/disable automated updates from Hermes (like the BBC News feed).
+    </p>
+    
+    <div class="divider"></div>
+    
+    <div class="list-section">
+      <div class="list-section-title">Push Message</div>
+      <div class="field">
+        <input type="text" id="h-msg-input" placeholder="Type a message to show on the board..." onkeydown="if(event.key==='Enter')pushHermesMessage()">
+      </div>
+      <div class="field" style="display:flex; gap:8px;">
+        <select id="h-msg-cat" style="background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:7px 10px; flex:1;">
+          <option value="text">General Text</option>
+          <option value="news">News Headline</option>
+        </select>
+        <button class="btn btn-primary" onclick="pushHermesMessage()">Push Message</button>
+      </div>
+    </div>
+    
+    <div class="divider"></div>
+    
+    <div class="list-section">
+      <div class="list-section-title">Trigger Animation</div>
+      <div class="field" style="display:flex; gap:8px;">
+        <select id="h-anim-type" style="background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:7px 10px; flex:1;">
+          ${ALL_ANIM_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+        </select>
+        <button class="btn btn-secondary" onclick="pushHermesAnimation()">Run Animation</button>
+      </div>
+    </div>
+  `;
+}
+
+async function saveHermes() {
+  await saveSection('hermes', { ...cfg.hermes, enabled: document.getElementById('h-enabled').checked });
+}
+
+async function pushHermesMessage() {
+  const msg = document.getElementById('h-msg-input').value.trim();
+  if (!msg) return;
+  const cat = document.getElementById('h-msg-cat').value;
+  toast('Pushing message...', 'ok');
+  try {
+    const r = await fetch('/api/hermes/push', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: msg, category: cat})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast('Message pushed!', 'ok');
+      document.getElementById('h-msg-input').value = '';
+    } else {
+      toast('Failed: ' + d.reason, 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
+}
+
+async function pushHermesAnimation() {
+  const type = document.getElementById('h-anim-type').value;
+  toast(\`Starting \${type}...\`, 'ok');
+  try {
+    const r = await fetch('/api/hermes/push', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({category: 'animation', type: type, duration: 20})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast('Animation started!', 'ok');
+    } else {
+      toast('Failed: ' + d.reason, 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
+}
+
+// ── Weather tab ────────────────────────────────────────────────────────────
   try {
     const r = await fetch(`/api/actions/${action}`, {method: 'POST'});
     const d = await r.json();
