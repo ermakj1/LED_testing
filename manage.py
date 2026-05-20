@@ -80,8 +80,11 @@ DEFAULT_CONFIG = {
         "events": [],
     },
     "quotes": {
-        "interval_minutes": 60,
-        "enabled": True,
+      "interval_minutes": 60,
+      "enabled": True,
+    },
+    "hermes": {
+      "enabled": True,
     },
     "jeopardy": {
         "interval_minutes": 30,
@@ -427,6 +430,7 @@ _FEED_CATEGORIES = {
     "history":   ["history"],
     "countdown": ["countdown"],
     "quotes":    ["quote"],
+    "hermes":    ["news", "animation", "text"],
     "jeopardy":  ["jeopardy"],
 }
 
@@ -547,7 +551,7 @@ def api_config_update(section):
         restart_all()
         _log("Board settings updated")
     elif section in ("weather", "stock", "jokes", "animations",
-                     "nasa", "wordofday", "history", "countdown", "quotes", "jeopardy"):
+                     "nasa", "wordofday", "history", "countdown", "quotes", "jeopardy", "hermes"):
         was_enabled = cfg.get(section, {}).get("enabled", True)
         now_enabled = data.get("enabled", True)
         cfg[section] = data
@@ -643,6 +647,26 @@ def api_geocode():
     if not query:
         return jsonify({"results": []})
     return jsonify({"results": geocode(query)})
+
+@flask_app.route("/api/hermes/push", methods=["POST"])
+def api_hermes_push():
+    data = freq.get_json(force=True)
+    # Construct command for hermes.py
+    cmd = [sys.executable, str(REPO_DIR / "feeds" / "hermes.py")]
+    
+    text = data.get("text")
+    if text:
+        cmd.append(text)
+        
+    for key in ["category", "type", "duration", "ttl"]:
+        if key in data:
+            cmd.extend([f"--{key}", str(data[key])])
+            
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        return jsonify({"ok": True})
+    except subprocess.CalledProcessError as e:
+        return jsonify({"ok": False, "reason": e.stderr.decode() or str(e)}), 500
 
 def _board_url():
     cfg = _cfg_ref or load_config()
