@@ -1194,8 +1194,7 @@ function renderHermes() {
 }
 
 async function saveHermes() {
-  cfg.hermes.enabled = document.getElementById('h-enabled').checked;
-  await saveSection('hermes', cfg.hermes);
+  await saveSection('hermes', { ...cfg.hermes, enabled: document.getElementById('h-enabled').checked });
 }
 
 async function pushHermesMessage() {

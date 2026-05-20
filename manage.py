@@ -80,11 +80,11 @@ DEFAULT_CONFIG = {
         "events": [],
     },
     "quotes": {
-      "interval_minutes": 60,
-      "enabled": True,
+        "interval_minutes": 60,
+        "enabled": True,
     },
     "hermes": {
-      "enabled": True,
+        "enabled": True,
     },
     "jeopardy": {
         "interval_minutes": 30,
@@ -650,18 +650,32 @@ def api_geocode():
 
 @flask_app.route("/api/hermes/push", methods=["POST"])
 def api_hermes_push():
+    cfg = _cfg_ref or load_config()
+    if not cfg.get("hermes", {}).get("enabled", True):
+        return jsonify({"ok": False, "reason": "Hermes is disabled"}), 403
+
     data = freq.get_json(force=True)
+
+    # Validate inputs
+    text = data.get("text")
+    if text is not None:
+        if not isinstance(text, str) or not text.strip():
+            return jsonify({"ok": False, "reason": "text must be a non-empty string"}), 400
+        if len(text) > 200:
+            return jsonify({"ok": False, "reason": "text must be 200 characters or fewer"}), 400
+        text = text.strip()
+    for int_key in ("duration", "ttl"):
+        if int_key in data and not isinstance(data[int_key], int):
+            return jsonify({"ok": False, "reason": f"{int_key} must be an integer"}), 400
+
     # Construct command for hermes.py
     cmd = [sys.executable, str(REPO_DIR / "feeds" / "hermes.py")]
-    
-    text = data.get("text")
     if text:
         cmd.append(text)
-        
     for key in ["category", "type", "duration", "ttl"]:
         if key in data:
             cmd.extend([f"--{key}", str(data[key])])
-            
+
     try:
         subprocess.run(cmd, check=True, capture_output=True)
         return jsonify({"ok": True})
