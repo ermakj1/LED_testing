@@ -390,19 +390,25 @@ def _start_callback_server(cfg):
         return None
 
 def _board_register(cfg, callback_url):
+    """Register callback URL with the board, retrying until it succeeds."""
     board_url = cfg.get("board_url", "")
-    try:
-        req = urllib.request.Request(
-            f"{board_url}/register",
-            data=json.dumps({"url": callback_url}).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=5):
-            pass
-        _log(f"Registered callback: {callback_url}")
-    except Exception as e:
-        _log(f"Callback registration failed: {e}")
+    delay = 10
+    while True:
+        try:
+            req = urllib.request.Request(
+                f"{board_url}/register",
+                data=json.dumps({"url": callback_url}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+            _log(f"Registered callback: {callback_url}")
+            return
+        except Exception as e:
+            _log(f"Callback registration failed: {e} — retrying in {delay}s")
+            time.sleep(delay)
+            delay = min(delay * 2, 120)  # back off up to 2 minutes
 
 def _board_unregister(cfg):
     board_url = cfg.get("board_url", "")
