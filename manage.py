@@ -51,6 +51,13 @@ DEFAULT_CONFIG = {
         "interval_minutes": 30,
         "enabled": True,
     },
+    "bbc": {
+        "interval_minutes": 120,
+        "enabled": True,
+        "active_hours_only": True,
+        "count": 3,
+        "ttl_minutes": 125,
+    },
     "animations": {
         "interval_minutes": 20,
         "enabled": True,
@@ -242,6 +249,7 @@ def _build_processes():
         ManagedProcess("weather",    [sys.executable, "feeds/weather.py"],   startup_delay=0),
         ManagedProcess("stock",      [sys.executable, "feeds/stock.py"],     startup_delay=5),
         ManagedProcess("jokes",      [sys.executable, "feeds/jokes.py"],     startup_delay=10),
+        ManagedProcess("bbc",        [sys.executable, "feeds/bbc_headlines.py"], startup_delay=12),
         ManagedProcess("animations", [sys.executable, "feeds/animations.py"],startup_delay=15),
         ManagedProcess("nasa",       [sys.executable, "feeds/nasa.py"],      startup_delay=20),
         ManagedProcess("wordofday",  [sys.executable, "feeds/wordofday.py"], startup_delay=25),
@@ -432,6 +440,7 @@ _FEED_CATEGORIES = {
     "jokes":     ["joke"],
     "animations":["animation"],
     "nasa":      ["bitmap"],
+    "bbc":       ["news"],
     "wordofday": ["word"],
     "history":   ["history"],
     "countdown": ["countdown"],
@@ -556,7 +565,7 @@ def api_config_update(section):
         _cfg_ref = cfg
         restart_all()
         _log("Board settings updated")
-    elif section in ("weather", "stock", "jokes", "animations",
+    elif section in ("weather", "stock", "jokes", "bbc", "animations",
                      "nasa", "wordofday", "history", "countdown", "quotes", "jeopardy", "hermes"):
         was_enabled = cfg.get(section, {}).get("enabled", True)
         now_enabled = data.get("enabled", True)
