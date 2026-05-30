@@ -26,6 +26,7 @@ import sys
 import time
 import json
 import csv
+import html
 import io
 import random
 import argparse
@@ -85,6 +86,24 @@ def is_celebrity_only():
 
 CELEB_CACHE_PATH = Path(__file__).parent / ".jeopardy_celebrity_cache.json"
 
+def _clean(text):
+    """Unescape HTML and normalize quotes/dashes for the LED display."""
+    if not text:
+        return ""
+    # 1. HTML unescape (&quot; -> ")
+    text = html.unescape(text)
+    # 2. Remove backslashes escaping quotes in the source dataset
+    text = text.replace('\\"', '"').replace("\\'", "'")
+    # 3. Normalize smart quotes and dashes
+    replacements = {
+        '\u201c': '"', '\u201d': '"',
+        '\u2018': "'", '\u2019': "'",
+        '\u2014': "-", '\u2013': "-",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text.strip()
+
 def _clue_ok(row, min_val=None, max_val=None, celebrity_only=False):
     """Return True if this TSV row is a usable clue."""
     # Celebrity filter: notes field must mention "Celebrity Jeopardy"
@@ -103,23 +122,23 @@ def _clue_ok(row, min_val=None, max_val=None, celebrity_only=False):
         if max_val is not None and val > max_val:
             return False
 
-    clue   = (row.get("answer") or "").strip()    # "answer" column = clue text
-    answer = (row.get("question") or "").strip()  # "question" column = response
+    clue   = _clean(row.get("answer") or "")    # "answer" column = clue text
+    answer = _clean(row.get("question") or "")  # "question" column = response
     if len(clue) < MIN_CLUE_LEN or len(clue) > MAX_CLUE_LEN:
         return False
     if not answer or len(answer) > 60:
         return False
-    # Skip clues with HTML or backslashes (formatting artifacts)
-    if "<" in clue or "\\" in clue or "(" in answer:
+    # Skip clues with leftover HTML tags or other weirdness
+    if "<" in clue or "(" in answer:
         return False
     return True
 
 
 def _row_to_clue(row):
     return {
-        "clue":     row["answer"].strip(),
-        "answer":   row["question"].strip(),
-        "category": row["category"].strip().upper(),
+        "clue":     _clean(row["answer"]),
+        "answer":   _clean(row["question"]),
+        "category": _clean(row["category"]).upper(),
         "value":    int(row["clue_value"] or 0),
     }
 
