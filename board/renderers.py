@@ -29,10 +29,11 @@ _btn_up          = None
 _btn_down        = None
 _last_motion_ref = None  # mutable list [float] shared with code.py
 _sleep_timeout   = None
+_interrupt_ref   = None  # mutable list [bool] shared with code.py — set True to preempt render
 
 
-def init(display, server, pir, btn_up, btn_down, last_motion_ref, sleep_timeout):
-    global _display, _server, _pir, _btn_up, _btn_down, _last_motion_ref, _sleep_timeout
+def init(display, server, pir, btn_up, btn_down, last_motion_ref, sleep_timeout, interrupt_ref=None):
+    global _display, _server, _pir, _btn_up, _btn_down, _last_motion_ref, _sleep_timeout, _interrupt_ref
     _display         = display
     _server          = server
     _pir             = pir
@@ -40,6 +41,7 @@ def init(display, server, pir, btn_up, btn_down, last_motion_ref, sleep_timeout)
     _btn_down        = btn_down
     _last_motion_ref = last_motion_ref
     _sleep_timeout   = sleep_timeout
+    _interrupt_ref   = interrupt_ref
 
 
 # ---------------------------------------------------------------------------
@@ -51,6 +53,8 @@ def _poll():
     _server.poll()
     if _pir.value:
         _last_motion_ref[0] = time.monotonic()
+    if _interrupt_ref is not None and _interrupt_ref[0]:
+        return "interrupt"
     if not _btn_up.value:
         return "skip"
     if not _btn_down.value:
@@ -440,6 +444,11 @@ def render_clock():
 
 def render_greeting(text):
     return _show_text(text, GREETING_COLOR, 0x0A0500, hold_secs=4)
+
+
+def render_interrupt(text, duration=5):
+    """Show an interrupt message for `duration` seconds, then return 'done'."""
+    return _show_text(text, 0xFF4400, 0x0A0000, hold_secs=duration)
 
 
 def render_generic(msg):

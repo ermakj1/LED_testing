@@ -2,10 +2,11 @@ VERSION = "1.8"
 
 # MatrixPortal S3 - scrolling message queue with HTTP API
 #
-# POST /add      category-specific JSON payload (see send_message.py)
-# POST /clear    clears the queue
-# POST /register {"url": "..."} — register callback URL for board events
-# GET  /         returns current queue as JSON
+# POST /add       category-specific JSON payload (see send_message.py)
+# POST /clear     clears the queue
+# POST /interrupt {"text": "...", "duration": 5} — preempt display, then resume queue
+# POST /register  {"url": "..."} — register callback URL for board events
+# GET  /          returns current queue as JSON
 #
 # UP button: skip current message
 # DOWN button: clear queue
@@ -162,6 +163,10 @@ current_msg     = None
 _pending_reload = False
 _pending_wake   = False
 
+# Interrupt state — set by POST /interrupt, consumed by main loop
+_interrupt_ref = [False]   # mutable so renderers._poll() can read it
+_interrupt_msg = None      # {"text": ..., "duration": ...}
+
 def _new_id():
     global _next_id
     _next_id += 1
@@ -280,6 +285,22 @@ def clear_queue(request: Request):
     message_queue.clear()
     log("Queue cleared via HTTP")
     return Response(request, '{"ok":true}', content_type="application/json")
+
+@server.route("/interrupt", "POST")
+def interrupt_display(request: Request):
+    global _interrupt_msg
+    try:
+        data = json.loads(request.body)
+        text = str(data.get("text", "")).strip()
+        if not text:
+            return Response(request, '{"ok":false,"reason":"missing text"}', content_type="application/json", status=(400, "Bad Request"))
+        duration = float(data.get("duration", 5))
+        _interrupt_msg   = {"text": text, "duration": duration}
+        _interrupt_ref[0] = True
+        log(f"Interrupt requested: \"{text}\" for {duration}s")
+        return Response(request, '{"ok":true}', content_type="application/json")
+    except Exception as e:
+        return Response(request, json.dumps({"ok": False, "reason": str(e)}), content_type="application/json", status=(400, "Bad Request"))
 
 @server.route("/upload", "POST")
 def upload_file(request: Request):
@@ -536,7 +557,7 @@ if not PIR_ENABLED:
 
 # --- Renderers init ---
 
-renderers.init(display, server, pir, btn_up, btn_down, last_motion_ref, SLEEP_TIMEOUT_SECONDS)
+renderers.init(display, server, pir, btn_up, btn_down, last_motion_ref, SLEEP_TIMEOUT_SECONDS, _interrupt_ref)
 
 # --- Helpers ---
 
@@ -548,6 +569,27 @@ def greeting_text():
     if 5 <= hour < 12:  return "Good morning!"
     if 12 <= hour < 18: return "Good afternoon!"
     return "Good evening!"
+
+def _run_interrupt():
+    """Display the pending interrupt message, then clear interrupt state."""
+    global _interrupt_msg
+    msg = _interrupt_msg
+    if msg is None:
+        _interrupt_ref[0] = False
+        return
+    text     = msg["text"]
+    duration = float(msg.get("duration", 5))
+    # Clear flag before rendering so _poll() won't immediately re-trigger
+    _interrupt_ref[0] = False
+    _interrupt_msg    = None
+    log(f"Interrupt display: \"{text}\" ({duration}s)")
+    _crumb_write("interrupt")
+    try:
+        renderers.render_interrupt(text, duration)
+    except Exception as e:
+        _write_crash("interrupt", e)
+    _crumb_clear()
+    clear_display()
 
 # --- Main loop ---
 
@@ -657,6 +699,10 @@ while True:
         time.sleep(0.3)
         continue
 
+    # Interrupt — preempts whatever is currently displayed
+    if _interrupt_ref[0] and _interrupt_msg is not None:
+        _run_interrupt()
+
     purge_expired()
 
     # Periodically show the clock even when messages are queued
@@ -671,7 +717,9 @@ while True:
             except Exception as e:
                 _write_crash("clock", e)
                 action = "done"
-            if action == "sleep":
+            if action == "interrupt":
+                break
+            elif action == "sleep":
                 asleep      = True
                 sleep_start = time.monotonic()
                 break
@@ -679,6 +727,8 @@ while True:
                 message_queue.clear()
                 break
         _crumb_clear()
+        if _interrupt_ref[0] and _interrupt_msg is not None:
+            _run_interrupt()
 
     if message_queue:
         msg = message_queue.pop(0)
@@ -697,7 +747,12 @@ while True:
         current_msg = None
         _msgs_since_clock += 1
         clear_display()
-        if result == "sleep":
+        if result == "interrupt":
+            # Put the preempted message back at the front of the queue, then show interrupt
+            message_queue.insert(0, msg)
+            _run_interrupt()
+            continue
+        elif result == "sleep":
             log("No motion mid-display — sleeping")
             asleep         = True
             sleep_start    = time.monotonic()
@@ -720,7 +775,9 @@ while True:
                 log(f"Max plays reached [{msg.get('category','')}]: {_msg_summary(msg)}")
     else:
         result = renderers.render_clock()
-        if result == "clear":
+        if result == "interrupt":
+            _run_interrupt()
+        elif result == "clear":
             message_queue.clear()
         elif result == "sleep":
             clear_display()
