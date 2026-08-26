@@ -1222,7 +1222,7 @@ async function pushHermesMessage() {
 
 async function pushHermesAnimation() {
   const type = document.getElementById('h-anim-type').value;
-  toast(\`Starting \${type}...\`, 'ok');
+  toast(`Starting ${type}...`, 'ok');
   try {
     const r = await fetch('/api/hermes/push', {
       method: 'POST',
@@ -1235,16 +1235,6 @@ async function pushHermesAnimation() {
     } else {
       toast('Failed: ' + d.reason, 'err');
     }
-  } catch (e) {
-    toast('Error: ' + e.message, 'err');
-  }
-}
-
-// ── Weather tab ────────────────────────────────────────────────────────────
-  try {
-    const r = await fetch(`/api/actions/${action}`, {method: 'POST'});
-    const d = await r.json();
-    toast(d.ok ? 'Done!' : 'Failed', d.ok ? 'ok' : 'err');
   } catch (e) {
     toast('Error: ' + e.message, 'err');
   }
